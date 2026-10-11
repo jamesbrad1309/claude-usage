@@ -52,19 +52,16 @@ export type PromptRun = {
   models: ModelUse[]
 }
 
-/** One of your prompts as the conversation keeps it: what a click scrolls to. */
+/** One of your prompts as the conversation keeps it: an entry of the prompt list. */
 export type PromptRow = {
   /** The transcript row's id (session.append's uuid, or the drawn row's requestId). */
   id: string
-  /** The id the transcript draws the row under, once seen drawn. */
+  /** The id the conversation draws the row under, once seen drawn. */
   renderId?: string
   text: string
   /** When you sent it ($.clock.now() ms); absent for a prompt sent before the mod loaded. */
   sentAt?: number
 }
-
-/** The last click on a prompt record: whether the conversation scrolled to it. */
-export type JumpResult = { rowId: string; isDone: boolean; reason?: string }
 
 export type RateLimit = { kind: string; percentUsed: number; resetsAt?: string }
 
@@ -82,9 +79,6 @@ declare module 'claude-code' {
       prompts: PromptRun[]
       session: SessionFigures
       rows: PromptRow[]
-      jump: JumpResult | null
-      /** The prompt record you clicked: the pane's prompt card shows it (null: the latest). */
-      selected: string | null
       /** How many records the list has scrolled past, newest first. */
       listStart: number
       isListOpen: boolean

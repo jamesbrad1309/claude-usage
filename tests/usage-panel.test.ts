@@ -34,12 +34,12 @@ function engine(on: On) {
 
 type Found = { key?: string; text?: string; props: Record<string, unknown> }
 
-// A prompt record is three line buttons (jump:<id>, jump:<id>:prompt, jump:<id>:done): the
+// A prompt record is three lines (Boxes line:<id>, line:<id>:prompt, line:<id>:done): the
 // records in order, and one record's lines joined.
 const recordIds = async (ui: { findAll: (q: object) => Promise<Found[]> }) =>
-  (await ui.findAll({ type: 'Button' })).map(b => b.key ?? '').filter(k => /^jump:[^:]+$/.test(k))
+  (await ui.findAll({ type: 'Box' })).map(b => b.key ?? '').filter(k => /^line:[^:]+$/.test(k))
 const recordText = async (ui: { find: (q: object) => Promise<Found | undefined> }, id: string) =>
-  (await Promise.all(['', ':prompt', ':done'].map(async s => (await ui.find({ type: 'Button', key: `jump:${id}${s}` }))?.text ?? '?'))).join('\n')
+  (await Promise.all(['', ':prompt', ':done'].map(async s => (await ui.find({ type: 'Box', key: `line:${id}${s}` }))?.text ?? '?'))).join('\n')
 // An Svg carries no key: it is found by what its alt text says.
 const svgProps = async (ui: { findAll: (q: object) => Promise<Found[]> }, alt: RegExp) =>
   (await ui.findAll({ type: 'Svg' })).map(x => x.props as { alt: string; source: string }).find(p => alt.test(p.alt))
@@ -166,17 +166,19 @@ test('every prompt of the session is listed once, newest first, with when it was
   // Newest first, three lines each: number and sent time; the prompt; done time, models, tokens.
   const term = await $.ui.mount({ ...PANE, surface: 'terminal', props: paneProps })
   expect(await term.find({ type: 'Button', text: /Prompts in this session · 3/ })).toBeDefined()
-  expect(await recordIds(term)).toEqual(['jump:u2', 'jump:u1', 'jump:m0'])
+  expect(await recordIds(term)).toEqual(['line:u2', 'line:u1', 'line:m0'])
   expect(await recordText(term, 'u2')).toMatch(/^#3  ·  Sent \d\d:\d\d:\d\d\nSecond prompt\nRunning 0s  ·  no model yet  ·  0 tokens$/)
   expect(await recordText(term, 'u1')).toMatch(/^#2  ·  Sent \d\d:\d\d:\d\d\nFirst prompt\nDone \d\d:\d\d:\d\d · 1m 05s  ·  no model yet  ·  0 tokens$/)
   expect(await recordText(term, 'm0')).toBe('#1  ·  Sent before the panel was watching\nPrompt from before\nNo figures: sent before the panel was watching')
   await term.unmount()
 
-  // On the desktop: cards that tint on hover, the newest outlined; the running one has the crab.
+  // On the desktop: cards a blank row apart that tint on hover, the newest outlined; the running
+  // one has the crab. They only show: nothing in the list is a button but its own controls.
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: paneProps })
   const cards = (await ui.findAll({ type: 'Box' })).filter(b => b.props.borderStyle === 'round')
   expect(cards.map(c => c.props.borderColor)).toEqual(['claude', 'subtle', 'subtle'])
-  expect(cards.every(c => c.props.height === 5)).toBe(true)
+  expect(cards.every(c => c.props.height === 5 && c.props.marginTop === 1)).toBe(true)
+  expect((await ui.findAll({ type: 'Button' })).map(b => b.key)).toEqual(['list-toggle'])
   const tree = JSON.stringify(await ui.drawn())
   for (const id of ['u2', 'u1', 'm0']) {
     expect(tree).toMatch(new RegExp(`"key":"card:${id}"[^}]*\\},"hover":\\{"borderColor":"claude","backgroundColor":"#8080802a"\\}`))
@@ -186,15 +188,6 @@ test('every prompt of the session is listed once, newest first, with when it was
   expect(dots.map(d => d.props.color)).toEqual(['success', 'inactive'])
   expect(await svgProps(ui, /^Working on: Second prompt/)).toBeDefined()
 
-  // A click opens the prompt: the prompt card shows it, with a way back. (The test kit has no
-  // conversation to scroll, so the list's note says why it did not move.)
-  await ui.press({ key: 'jump:u1:prompt' })
-  expect(await svgProps(ui, /^Selected prompt: First prompt/)).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^Couldn't scroll to that prompt: / })).toBeDefined()
-  const selectedCards = (await ui.findAll({ type: 'Box' })).filter(b => b.props.borderStyle === 'round')
-  expect(selectedCards.map(c => c.props.borderColor)).toEqual(['subtle', 'claude', 'subtle'])
-  await ui.press({ key: 'back-to-latest' })
-  expect(await svgProps(ui, /^Working on: Second prompt/)).toBeDefined()
   await ui.unmount()
 })
 
@@ -210,14 +203,14 @@ test('the prompt list keeps a fixed height and scrolls inside, by wheel or ▲ �
   for (let i = 1; i <= 7; i++) {
     await $.session.append({ uuid: `p${i}`, door: 'prompt', origin: COMPOSER, message: { type: 'user', role: 'user', content: [{ type: 'text', text: `Prompt ${i}` }] } } as never)
   }
-  const shown = async () => (await recordIds(ui)).map(k => k.slice('jump:'.length))
+  const shown = async () => (await recordIds(ui)).map(k => k.slice('line:'.length))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: paneProps })
   const list = (await ui.findAll({ type: 'Box' })).find(b => b.key === 'prompt-list')
-  expect(list?.props.height).toBe(22)
+  expect(list?.props.height).toBe(25)
   expect(await shown()).toEqual(['p7', 'p6', 'p5', 'p4'])
   expect(await ui.find({ type: 'Text', text: '1–4 of 7' })).toBeDefined()
 
-  // A wheel tick over the list (its rows are the pane's last 22) moves the list a card, not the pane.
+  // A wheel tick over the list (its rows are the pane's last 25) moves the list a card, not the pane.
   const tick = (by: number, row: number) =>
     $.ui.scroll({ component: 'Pane', requestId: 'usage-panel', offset: 10 + by, by, bodyRows: 30, contentRows: 60, origin: { kind: 'person' }, pointer: { row, column: 4 } } as never)
   await tick(1, 45) // tree row 55: in the list

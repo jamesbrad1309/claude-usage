@@ -6,7 +6,7 @@
 
 `usage-panel` is a Claude Code mod: a live **Usage** pane beside the conversation and a one-line band above the prompt input.
 
-![version](https://img.shields.io/badge/version-0.5.0-7F77DD) ![Claude Code](https://img.shields.io/badge/Claude%20Code-mod-D97757) ![surfaces](https://img.shields.io/badge/desktop%20%2B%20terminal-supported-1D9E75) ![license](https://img.shields.io/badge/license-MIT-888780)
+![version](https://img.shields.io/badge/version-0.5.1-7F77DD) ![Claude Code](https://img.shields.io/badge/Claude%20Code-mod-D97757) ![surfaces](https://img.shields.io/badge/desktop%20%2B%20terminal-supported-1D9E75) ![license](https://img.shields.io/badge/license-MIT-888780)
 
 </div>
 
@@ -67,7 +67,7 @@ One line for the prompt in progress (or the last one):
 | **Session** | cost so far, context window fill, and the 5-hour and 7-day rate limits, with meters that turn amber at 70% and red at 90% |
 | **This prompt** | total tokens with a bar split into input, output, cache reads and cache writes; each model that worked on it: name, id, calls, tokens, share, and whether it ran the main conversation or subagents |
 | **Subagents** | each subagent the prompt started, nested under the one that started it, with live status, model, time, calls, tools and tokens |
-| **Prompts in this session** | every prompt you typed, newest first, as cards in a **fixed-height list** (4 at a time) that scrolls on its own: the mouse wheel over it, or ▲ ▼, moves through older prompts while the rest of the pane stays put. Each card: a status dot, its number and when you sent it; the prompt; when it finished, the models it used and its tokens, drawn like the token counter. Hovering a card tints it. **Click a card to open it:** the prompt card, models and subagents above switch to that prompt (← *Back to latest* returns), and in a terminal session the conversation scrolls up to it. |
+| **Prompts in this session** | every prompt you typed, newest first, as cards with room between them, in a **fixed-height list** (4 at a time) that scrolls on its own: the mouse wheel over it, or ▲ ▼, moves through older prompts while the rest of the pane stays put. Each card: a status dot, its number and when you sent it; the prompt; when it finished, the models it used and its tokens, drawn like the token counter. Hovering a card tints it. |
 
 While Claude works, a little animated Claude (the orange pixel crab, stepping and waving) marks what is running: the prompt card, each subagent, the band and the prompt list. The desktop app draws cards, bars and chips; a terminal gets the same figures as text. `/usage-panel` shows or hides the pane.
 
@@ -89,7 +89,7 @@ Start a new session afterwards for the change to load.
 - **Cost** is Claude Code's own ledger, the one `/cost` totals. A prompt's cost is how much the session's total grew while it ran, subagents included; subagents show tokens, not dollars.
 - **Per session:** each session shows only its own prompts. Nothing leaves your machine.
 - Prompts sent before the mod loaded are listed once the conversation has drawn them, without figures.
-- **Scrolling the conversation to a prompt** works in a terminal `claude` session. The desktop app doesn't let mods scroll its conversation (Claude Code answers *transcript not scrollable here*), so there a click opens the prompt in the pane instead.
+- The list doesn't jump to a prompt in the conversation: the desktop app doesn't let mods scroll its conversation (Claude Code answers *transcript not scrollable here*).
 
 ## 🛠 Develop
 

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementConstructor, EngineInterface, Register, SessionUsage, SvgProps, TurnUsage } from 'claude-code'
 
-import type { AgentRun, JumpResult, ModelUse, PromptRow, PromptRun, RunStatus, SessionFigures, Tokens } from '../types'
+import type { AgentRun, ModelUse, PromptRow, PromptRun, RunStatus, SessionFigures, Tokens } from '../types'
 import {
   agentRow,
   bandRow,
@@ -30,16 +30,14 @@ const session = atom({ plugin: 'usage-panel', key: 'session' } as const, {
   rateLimits: [],
 })
 const rows = atom({ plugin: 'usage-panel', key: 'rows' } as const, [])
-const jump = atom({ plugin: 'usage-panel', key: 'jump' } as const, null as JumpResult | null)
-const selected = atom({ plugin: 'usage-panel', key: 'selected' } as const, null as string | null)
 const listStart = atom({ plugin: 'usage-panel', key: 'listStart' } as const, 0)
 
-// The prompt list is the pane's last section, a fixed window: its header, a note line, and
-// PAGE cards of CARD_ROWS rows (a border and three lines). A wheel over its rows scrolls it.
+// The prompt list is the pane's last section, a fixed window: its header, then PAGE cards of
+// CARD_ROWS rows (a border and three lines), each after a blank row. A wheel over it scrolls it.
 const PAGE = 4
 const CARD_ROWS = 5
-const LIST_ROWS = 2 + PAGE * CARD_ROWS
-const NOT_SCROLLABLE = 'transcript not scrollable here'
+const GAP_ROWS = 1
+const LIST_ROWS = 1 + PAGE * (GAP_ROWS + CARD_ROWS)
 const CRAB = crabIcon(16)
 const isListOpen = atom({ plugin: 'usage-panel', key: 'isListOpen' } as const, true)
 const now = atom({ plugin: 'usage-panel', key: 'now' } as const, 0)
@@ -166,20 +164,6 @@ async function togglePane($: EngineInterface): Promise<boolean> {
   return true
 }
 
-// A click on a prompt record: scrolls the conversation up to it where the surface lets a mod
-// (a terminal session; the desktop app does not), and selects it, so the pane's prompt card
-// shows its figures. The outcome is kept, so the pane can say why nothing scrolled.
-async function jumpTo($: EngineInterface, row: PromptRow): Promise<void> {
-  let reason: string | undefined
-  try {
-    reason = (await $.ui.scroll({ to: { requestId: row.renderId ?? row.id }, block: 'start' })).deny
-  } catch (err) {
-    reason = (err as Error).message
-  }
-  await update($, selected, () => row.id)
-  await update($, jump, () => (reason ? { rowId: row.id, isDone: false, reason } : { rowId: row.id, isDone: true }))
-}
-
 // Prompt rows seen drawn, waiting to be saved: a render hook may not write state, so the
 // next event or the ticker saves them (within a second). Module scope: a reload redraws.
 let drawn: { id: string; text: string }[] = []
@@ -238,7 +222,7 @@ export const register: Register = on => {
     return result
   })
 
-  // Your prompts as the conversation keeps them, by row id: what the list scrolls to.
+  // Your prompts as the conversation keeps them, by row id: the prompt list.
   on('session.append', { door: 'prompt' }, async ($, e, next) => {
     const result = await next(e)
     await saveDrawn($)
@@ -251,7 +235,7 @@ export const register: Register = on => {
   })
 
   // Your prompts' rows in the conversation, as drawn: prompts sent before this mod loaded,
-  // and the id each is drawn under (what a click scrolls to). The drawing is the engine's.
+  // and the id each is drawn under (so it is listed once). The drawing is the engine's.
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
     if (isPersons(e.props.origin)) {
       const id = e.requestId
@@ -411,27 +395,14 @@ export const register: Register = on => {
     }
 
     const latest = list.at(-1)
-    // The prompt card and subagents show the record you clicked, else the latest prompt.
-    const selectedId = await read($, selected)
-    const selectedRow = selectedId ? promptRows.find(r => r.id === selectedId) : undefined
-    const selectedRun = selectedRow ? runOf(list, selectedRow) : undefined
-    const focus = selectedRun ?? latest
-    const isSelecting = Boolean(selectedRun && selectedRun !== latest)
+    // The prompt card and subagents show the latest prompt.
+    const focus = latest
     const agents = focus ? ordered(focus.agents) : []
-    const backBar = isSelecting ? (
-      <Box key="back" flexDirection="row" justifyContent="space-between">
-        <Text dimColor>Showing a prompt you selected</Text>
-        <Button key="back-to-latest" plain onPress={() => update($, selected, () => null)}>
-          <Text color="claude">← Back to latest</Text>
-        </Button>
-      </Box>
-    ) : null
 
     // Every prompt of the session, newest first, in a fixed window of PAGE cards that the wheel
     // (or ▲ ▼) moves through. A card: a status dot, then its number and when it was sent; the
     // prompt; when it finished, its models and tokens (drawn like the token counter on the
-    // desktop). A click on its lines opens it: see jumpTo.
-    const lastJump = await read($, jump)
+    // desktop). Cards only show: a mod can't scroll the desktop app's conversation to a prompt.
     const firstShown = await read($, listStart)
     const promptList = (desk?: { W: number; Svg: ElementConstructor<SvgProps> }) => {
       const cols = Math.max(24, (e.props.bodyColumns || 60) - 8)
@@ -439,20 +410,10 @@ export const register: Register = on => {
       const start = Math.max(0, Math.min(firstShown, items.length - PAGE))
       const page = items.slice(start, start + PAGE)
       const canScroll = items.length > PAGE
-      const failed = lastJump && !lastJump.isDone ? lastJump : null
-      const note = failed
-        ? failed.reason === NOT_SCROLLABLE
-          ? 'Opened above: this app doesn’t let mods scroll the conversation.'
-          : `Couldn't scroll to that prompt: ${failed.reason || 'the conversation did not move'}`
-        : items.length === 0
-          ? 'Your prompts appear here.'
-          : canScroll
-            ? 'Scroll here for older prompts · click one to open it'
-            : 'Click a prompt to open it'
       const move = (by: number) => update($, listStart, v => Math.max(0, Math.min(items.length - PAGE, Math.min(v, items.length - PAGE) + by)))
 
       const card = ({ row, run, n }: (typeof items)[number]) => {
-        const isActive = selectedId ? row.id === selectedId : n === items.length
+        const isLatest = n === items.length
         const t = run ? promptTokens(run) : undefined
         const sent = run?.startedAt ?? row.sentAt
         const status = run?.status
@@ -461,11 +422,12 @@ export const register: Register = on => {
             ? `Running ${fmtTime(at - run.startedAt)}`
             : `${status === 'done' ? 'Done' : status === 'aborted' ? 'Stopped' : 'Failed'} ${fmtClock(run.endedAt ?? at, at)} · ${fmtTime((run.endedAt ?? at) - run.startedAt)}`
           : ''
-        const line = (suffix: string, ...children: (string | ReturnType<typeof h>)[]) =>
-          h(Button, { key: `jump:${row.id}${suffix}`, plain: true, onPress: () => jumpTo($, row) }, ...children)
+        const line = (suffix: string, ...children: (string | ReturnType<typeof h>)[]) => (
+          <Box key={`line:${row.id}${suffix}`}>{h(Text, { wrap: 'truncate-end' }, ...children)}</Box>
+        )
         const head = line(
           '',
-          <Text key="index" color={isActive ? 'claude' : 'subtle'} bold>
+          <Text key="index" color={isLatest ? 'claude' : 'subtle'} bold>
             {`#${n}`}
           </Text>,
           <Text key="sent" dimColor>
@@ -474,7 +436,7 @@ export const register: Register = on => {
         )
         const text = line(
           ':prompt',
-          <Text key="text" bold hover={{ underline: true }}>
+          <Text key="text" bold>
             {oneLine(row.text, cols)}
           </Text>,
         )
@@ -511,9 +473,10 @@ export const register: Register = on => {
             gap={1}
             height={CARD_ROWS}
             borderStyle="round"
-            borderColor={isActive ? 'claude' : 'subtle'}
+            borderColor={isLatest ? 'claude' : 'subtle'}
             hover={{ borderColor: 'claude', backgroundColor: HOVER_BG }}
             paddingX={1}
+            marginTop={GAP_ROWS}
           >
             {desk && status === 'running' ? (
               <desk.Svg key={`crab:${row.id}`} source={CRAB.source} alt="Claude at work" width={CRAB.width} height={CRAB.height} />
@@ -550,11 +513,6 @@ export const register: Register = on => {
               </Box>
             )}
           </Box>
-          {isOpen && (
-            <Text key="list-note" color={failed && failed.reason !== NOT_SCROLLABLE ? 'warning' : 'subtle'} wrap="truncate-end">
-              {note}
-            </Text>
-          )}
           {isOpen && page.map(card)}
         </Box>
       )
@@ -570,13 +528,11 @@ export const register: Register = on => {
             elapsedMs: elapsed(focus),
             calls: calls(focus),
             tools: tools(focus),
-            title: isSelecting ? 'Selected prompt' : undefined,
           })
         : null
       return (
         <Box flexDirection="column" gap={1}>
           <Svg key="tiles" source={tiles.source} alt={tiles.alt} width={W} height={tiles.height} />
-          {backBar}
           {card ? (
             <Svg key="prompt" source={card.source} alt={card.alt} width={W} height={card.height} />
           ) : (
@@ -633,8 +589,7 @@ export const register: Register = on => {
         ))}
 
         <Box marginTop={1} flexDirection="column">
-          <Text bold>{isSelecting ? 'Selected prompt' : 'This prompt'}</Text>
-          {backBar}
+          <Text bold>This prompt</Text>
           {focus ? (
             <Box flexDirection="column">
               <Text wrap="truncate-end">
