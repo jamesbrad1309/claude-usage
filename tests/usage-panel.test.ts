@@ -94,8 +94,10 @@ test('the prompt totals tokens over the main loop and its subagents, by model', 
   expect(card?.source).toMatch(/<text [^>]*><tspan [^>]*>22k<\/tspan><tspan dx="7"[^>]*>tokens<\/tspan><\/text>/)
   // Claude at work: the running mark is the animated crab, not a dot.
   expect(card?.source).toMatch(/<g class="crab">/)
-  // Its record's last line, drawn like the counter: status, a pill per model, the tokens.
-  expect(await svgProps(desk, /^Running 0s · Opus 5\.5, Haiku 5\.5 · 22k tokens$/)).toBeDefined()
+  // Its record's last line, drawn like the counter: status, a pill per model, the tokens; no bar.
+  const recordLine = await svgProps(desk, /^Running 0s · Opus 5\.5, Haiku 5\.5 · 22k tokens$/)
+  expect(recordLine).toBeDefined()
+  expect(recordLine?.source).not.toMatch(/class="track"|clip-path/)
   await desk.unmount()
   const listed = await $.ui.mount({ ...PANE, surface: 'terminal', props: paneProps })
   expect(await recordText(listed, 'u1')).toMatch(/\nCount my tokens\nRunning 0s  ·  Opus 5\.5, Haiku 5\.5  ·  22k tokens$/)

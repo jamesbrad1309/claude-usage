@@ -412,8 +412,8 @@ export function bandRow(W: number, p: PromptRun, t: Tokens, elapsedMs: number, c
 
 /**
  * The third line of a prompt record, in the token counter's style: when it finished (or how
- * long it has run), a pill per model, a stacked bar of its tokens, and the count, bold, at the
- * right. Without a run: a note that it has no figures.
+ * long it has run), a pill per model, and the count, bold, at the right. Without a run: a note
+ * that it has no figures.
  */
 export function recordMeta(W: number, p: PromptRun | undefined, t: Tokens | undefined, done: string): { source: string; height: number; alt: string } {
   const H = 18
@@ -435,25 +435,11 @@ export function recordMeta(W: number, p: PromptRun | undefined, t: Tokens | unde
   for (const m of p.models) {
     const label = modelName(m.model)
     const w = textWidth(label, 10, false, true) + 14
-    if (x + w > right - 40) break
+    if (x + w > right) break
     parts.push(pill(x, mid - 8, label, modelColor(m.model), 10).markup)
     x += w + 4
   }
 
-  // The stacked bar fills what is left between the pills and the count.
-  const barW = right - x - 4
-  if (barW >= 30 && sum > 0) {
-    const y = mid - 2.5
-    let bx = x + 4
-    const segs = PARTS.map(part => {
-      const w = (t[part.key] / sum) * barW
-      const seg = w > 0 ? `<rect x="${bx}" y="${y}" width="${w + 0.5}" height="5" fill="${part.color}"/>` : ''
-      bx += w
-      return seg
-    })
-    parts.push(`<defs><clipPath id="mix"><rect x="${x + 4}" y="${y}" width="${barW}" height="5" rx="2.5"/></clipPath></defs>`)
-    parts.push(`<rect class="track" x="${x + 4}" y="${y}" width="${barW}" height="5" rx="2.5"/><g clip-path="url(#mix)">${segs.join('')}</g>`)
-  }
   const alt = `${done} · ${p.models.map(m => modelName(m.model)).join(', ') || 'no model yet'} · ${count} tokens`
   return { source: svg(W, H, parts.join('')), height: H, alt }
 }
