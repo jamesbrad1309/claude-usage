@@ -83,6 +83,8 @@ test('the prompt totals tokens over the main loop and its subagents, by model', 
   expect(card?.alt).toMatch(/22k tokens \(in 1k, out 600, cache read 20k, cache write 0\)/)
   expect(card?.alt).toMatch(/Opus 5\.5 \(claude-opus-5-5\) main 22k; Haiku 5\.5 \(claude-haiku-5-5\) 1 subagent 300/)
   expect(card?.source).toMatch(/^<svg /)
+  // The count and its label share one <text>, so a wide number never runs into "tokens".
+  expect(card?.source).toMatch(/<text [^>]*><tspan [^>]*>22k<\/tspan><tspan dx="7"[^>]*>tokens<\/tspan><\/text>/)
   // Its record's last line: status, each model, the prompt's tokens.
   const record = await desk.find({ type: 'Button', key: 'jump:u1' })
   expect(record?.text).toMatch(/\nCount my tokens\nRunning 0s  ·  ● Opus 5\.5  ·  ● Haiku 5\.5  ·  22k tokens$/)
@@ -103,6 +105,7 @@ test('the band above the prompt shows the prompt’s tokens and model id', async
   const band = await svgProps(desk, /claude-opus-5-5/)
   expect(band?.alt).toMatch(/^claude-opus-5-5: 22k tokens \(500 out\)/)
   expect(band?.source).toMatch(/claude-opus-5-5/)
+  expect(band?.source).toMatch(/<text [^>]*text-anchor="end"><tspan [^>]*>22k<\/tspan><tspan dx="5"[^>]*>tokens<\/tspan>/)
   expect(await desk.find({ type: 'Button', key: 'usage-open' })).toBeDefined()
   await desk.unmount()
 })

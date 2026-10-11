@@ -21,12 +21,14 @@ const svg = (W: number, H: number, body: string): string =>
 const xml = (s: string): string =>
   s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c)
 
-// Rough advance of system UI text, in em: enough to fit and align labels.
+// Rough advance of system UI text, in em: enough to decide what fits. Digits are drawn
+// tabular (every digit as wide as a 0), bold runs a little wider. Text that sits beside
+// other text is never placed by this estimate: it shares one <text> (see spans).
 const charEm = (ch: string): number =>
-  /[\s.,:;'|!il1()[\]]/.test(ch) ? 0.3 : /[A-ZMW@%mw]/.test(ch) ? 0.72 : 0.56
+  /\d/.test(ch) ? 0.62 : /[\s.,:;'|!il()[\]]/.test(ch) ? 0.3 : /[A-ZMW@%mw]/.test(ch) ? 0.76 : 0.57
 
-export const textWidth = (s: string, size: number, isMono = false): number =>
-  isMono ? s.length * size * 0.6 : [...s].reduce((w, ch) => w + charEm(ch) * size, 0)
+export const textWidth = (s: string, size: number, isMono = false, isBold = false): number =>
+  isMono ? s.length * size * 0.6 : [...s].reduce((w, ch) => w + charEm(ch) * size, 0) * (isBold ? 1.07 : 1)
 
 export const fitText = (s: string, size: number, maxW: number, isMono = false): string => {
   const flat = s.replace(/\s+/g, ' ').trim()
@@ -43,6 +45,24 @@ type TextOpts = { size?: number; cls?: string; weight?: number; anchor?: 'start'
 
 const text = (x: number, y: number, s: string, o: TextOpts = {}): string =>
   `<text x="${x}" y="${y}"${o.fill ? ` fill="${o.fill}"` : ` class="${o.cls ?? 'fg'}"`} font-family="${o.isMono ? MONO : FONT}" font-size="${o.size ?? 12}"${o.weight ? ` font-weight="${o.weight}"` : ''}${o.anchor && o.anchor !== 'start' ? ` text-anchor="${o.anchor}"` : ''} font-variant-numeric="tabular-nums">${xml(s)}</text>`
+
+type Span = { s: string; size?: number; cls?: string; weight?: number; fill?: string; isMono?: boolean; gap?: number }
+
+/**
+ * Several styled runs as one <text>: the renderer lays them out end to end, so a label
+ * never overlaps the number before it however wide that number draws. `gap` is the space
+ * before a run, in pixels.
+ */
+const spans = (x: number, y: number, runs: Span[], anchor: 'start' | 'end' = 'start'): string =>
+  `<text x="${x}" y="${y}" font-family="${FONT}" font-variant-numeric="tabular-nums"${anchor === 'end' ? ' text-anchor="end"' : ''}>` +
+  runs
+    .map(
+      r =>
+        `<tspan${r.gap ? ` dx="${r.gap}"` : ''}${r.fill ? ` fill="${r.fill}"` : ` class="${r.cls ?? 'fg'}"`} font-size="${r.size ?? 12}"` +
+        `${r.weight ? ` font-weight="${r.weight}"` : ''}${r.isMono ? ` font-family="${MONO}"` : ''}>${xml(r.s)}</tspan>`,
+    )
+    .join('') +
+  '</text>'
 
 // ---- formatting -----------------------------------------------------------------
 
@@ -103,7 +123,7 @@ const meter = (x: number, y: number, w: number, h: number, frac: number, color: 
 
 // A rounded pill with centred white text; returns markup and width.
 const pill = (x: number, y: number, label: string, color: string, size = 11): { markup: string; w: number } => {
-  const w = Math.round(textWidth(label, size) + 14)
+  const w = Math.round(textWidth(label, size, false, true) + 14)
   const h = size + 7
   return {
     markup: `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${h / 2}" fill="${color}"/>${text(x + w / 2, y + h / 2 + size * 0.36, label, { size, weight: 600, anchor: 'middle', fill: '#ffffff' })}`,
@@ -143,7 +163,7 @@ export function sessionTiles(W: number, s: SessionFigures): { source: string; he
         `<rect class="card" x="${x + 0.5}" y="${y + 0.5}" width="${tw - 1}" height="${th - 1}" rx="10"/>` +
         text(x + 12, y + 20, t.label, { size: 11, cls: 'mu' }) +
         text(x + 12, y + 42, t.value, { size: 19, weight: 650 }) +
-        (t.sub ? text(x + tw - 12, y + 42, fitText(t.sub, 10.5, tw - 24 - textWidth(t.value, 19)), { size: 10.5, cls: 'su', anchor: 'end' }) : '') +
+        (t.sub ? text(x + tw - 12, y + 42, fitText(t.sub, 10.5, tw - 36 - textWidth(t.value, 19, false, true)), { size: 10.5, cls: 'su', anchor: 'end' }) : '') +
         (t.pct !== undefined ? meter(x + 12, y + th - 14, tw - 24, 4, t.pct / 100, pctColor(t.pct)) : '')
       )
     })
@@ -179,8 +199,7 @@ export function promptCard(
   // Big token count, calls and tools.
   y += 38
   const big = fmtTokens(sum)
-  out.push(text(pad, y, big, { size: 26, weight: 700 }))
-  out.push(text(pad + textWidth(big, 26) + 6, y, 'tokens', { size: 12, cls: 'mu' }))
+  out.push(spans(pad, y, [{ s: big, size: 26, weight: 700 }, { s: 'tokens', size: 12, cls: 'mu', gap: 7 }]))
   out.push(text(W - pad, y, `${extra.calls} model calls  ·  ${extra.tools} tool calls`, { size: 11, cls: 'mu', anchor: 'end' }))
 
   // Stacked composition bar.
@@ -247,12 +266,14 @@ const modelRow = (x: number, y: number, w: number, m: ModelUse, promptTotal: num
   const tokens = total(m.tokens)
   const name = modelName(m.model)
   const right = `${fmtTokens(tokens)}  ·  ${m.mainCalls + m.agentCalls} calls`
-  const nameW = textWidth(name, 12.5) + 8
-  const rightW = textWidth(right, 11) + 12
+  const nameW = textWidth(name, 12.5, false, true) + 8
+  const rightW = textWidth(right, 11) + 16
   return (
     `<rect x="${x}" y="${y + 1}" width="10" height="10" rx="3" fill="${color}"/>` +
-    text(x + 16, y + 10.5, name, { size: 12.5, weight: 600 }) +
-    text(x + 16 + nameW, y + 10.5, fitText(m.model, 10.5, w - 16 - nameW - rightW, true), { size: 10.5, cls: 'su', isMono: true }) +
+    spans(x + 16, y + 10.5, [
+      { s: name, size: 12.5, weight: 600 },
+      { s: fitText(m.model, 10.5, w - 16 - nameW - rightW, true), size: 10.5, cls: 'su', isMono: true, gap: 8 },
+    ]) +
     text(x + w, y + 10.5, right, { size: 11, cls: 'mu', anchor: 'end' }) +
     meter(x + 16, y + 17, w - 16 - 120, 4, promptTotal ? tokens / promptTotal : 0, color) +
     text(x + w, y + 22, whereOf(m), { size: 10.5, cls: 'su', anchor: 'end' })
@@ -305,35 +326,31 @@ export function bandRow(W: number, p: PromptRun, t: Tokens, elapsedMs: number, c
     x += textWidth(id, 11, true) + 10
   }
 
-  // Subagents' models, as small chips, while there is room.
-  const others = p.models.filter(m => m.model !== mainModel)
-  const stats = `${fmtTime(elapsedMs)}  ·  ≈${fmtUsd(costUsd)}`
+  // Right side, one <text> anchored at the right edge: tokens, then output, time and cost
+  // while they fit. Decided by estimate; laid out by the renderer, so nothing overlaps.
   const tokens = fmtTokens(total(t))
-  const tokensW = textWidth(tokens, 14) + textWidth(' tokens', 11) + 4
-  const outText = `${fmtTokens(t.output)} out`
-  const reserve = tokensW + textWidth(outText, 11) + 14 + textWidth(stats, 11) + 18
-  for (const m of others) {
+  const right: Span[] = [
+    { s: tokens, size: 14, weight: 700 },
+    { s: 'tokens', size: 11, cls: 'mu', gap: 5 },
+  ]
+  let rightW = textWidth(tokens, 14, false, true) + 5 + textWidth('tokens', 11)
+  for (const extra of [`·  ${fmtTokens(t.output)} out`, `·  ${fmtTime(elapsedMs)}`, `·  ≈${fmtUsd(costUsd)}`]) {
+    const w = 10 + textWidth(extra, 11)
+    if (x + rightW + w + 24 > W) break
+    right.push({ s: extra, size: 11, cls: 'su', gap: 10 })
+    rightW += w
+  }
+
+  // Subagents' models, as small chips, while there is room before the right side.
+  for (const m of p.models.filter(one => one.model !== mainModel)) {
     const label = `+ ${modelName(m.model)}`
-    const w = textWidth(label, 10) + 14
-    if (x + w > W - reserve) break
+    const w = textWidth(label, 10, false, true) + 14
+    if (x + w + 24 > W - rightW) break
     const chip = pill(x, mid - 8, label, modelColor(m.model), 10)
     parts.push(chip.markup)
     x += chip.w + 4
   }
-
-  // Right side: tokens, output, time and cost.
-  let rx = W - 2
-  if (W - x > reserve) {
-    parts.push(text(rx, mid + 4, stats, { size: 11, cls: 'su', anchor: 'end' }))
-    rx -= textWidth(stats, 11) + 14
-  }
-  if (rx - x > tokensW + textWidth(outText, 11) + 10) {
-    parts.push(text(rx, mid + 4, outText, { size: 11, cls: 'mu', anchor: 'end' }))
-    rx -= textWidth(outText, 11) + 8
-  }
-  parts.push(text(rx, mid + 4, 'tokens', { size: 11, cls: 'mu', anchor: 'end' }))
-  rx -= textWidth('tokens', 11) + 4
-  parts.push(text(rx, mid + 5, tokens, { size: 14, weight: 700, anchor: 'end' }))
+  parts.push(spans(W - 2, mid + 5, right, 'end'))
 
   return { source: svg(W, H, parts.join('')), height: H }
 }
