@@ -63,6 +63,13 @@ export type PromptRow = {
   sentAt?: number
 }
 
+/** The whole conversation's usage since the panel started watching: every model call, main and subagents. */
+export type ConversationTotals = {
+  modelCalls: number
+  toolCalls: number
+  tokens: Tokens
+}
+
 export type RateLimit = { kind: string; percentUsed: number; resetsAt?: string }
 
 export type SessionFigures = {
@@ -79,6 +86,8 @@ declare module 'claude-code' {
       prompts: PromptRun[]
       session: SessionFigures
       rows: PromptRow[]
+      /** Null until the first model call this mod sees: then seeded from the prompts it holds. */
+      totals: ConversationTotals | null
       /** How many records the list has scrolled past, newest first. */
       listStart: number
       isListOpen: boolean

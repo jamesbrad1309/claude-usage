@@ -1,6 +1,6 @@
 // SVG drawings for the desktop: the pane's cards and rows, and the band above the prompt.
 // Pure functions of the mod's state; each returns markup and its height in CSS pixels.
-import type { AgentRun, ModelUse, PromptRun, RunStatus, SessionFigures, Tokens } from '../types'
+import type { AgentRun, ConversationTotals, ModelUse, PromptRun, RunStatus, SessionFigures, Tokens } from '../types'
 
 // ---- shared ---------------------------------------------------------------------
 
@@ -434,4 +434,77 @@ export function recordMeta(W: number, p: PromptRun | undefined, t: Tokens | unde
   }
   const alt = `${done} · ${p.models.map(m => modelName(m.model)).join(', ') || 'no model yet'} · ${count} tokens`
   return { source: svg(W, H, parts.join('')), height: H, alt }
+}
+
+// ---- pane: the whole conversation -------------------------------------------------------
+
+/**
+ * The conversation so far, in the token counter's style: tiles for prompts sent, model calls,
+ * tool calls and tokens, then the tokens split by kind in one bar with its legend.
+ */
+export function conversationCard(W: number, prompts: number, c: ConversationTotals): { source: string; height: number; alt: string } {
+  const pad = 14
+  const inner = W - pad * 2
+  const sum = total(c.tokens)
+  const out: string[] = []
+  let y = 22
+  out.push(text(pad, y, 'This conversation', { size: 11, cls: 'mu', weight: 500 }))
+
+  const tiles = [
+    { label: 'Prompts sent', value: String(prompts) },
+    { label: 'Model calls', value: String(c.modelCalls) },
+    { label: 'Tool calls', value: String(c.toolCalls) },
+    { label: 'Tokens', value: fmtTokens(sum) },
+  ]
+  const gap = 8
+  const cols = W >= 480 ? 4 : 2
+  const tw = (inner - gap * (cols - 1)) / cols
+  const th = 50
+  y += 10
+  tiles.forEach((t, i) => {
+    const x = pad + (i % cols) * (tw + gap)
+    const ty = y + Math.floor(i / cols) * (th + gap)
+    out.push(`<rect class="track" x="${x}" y="${ty}" width="${tw}" height="${th}" rx="8" opacity="0.55"/>`)
+    out.push(text(x + 10, ty + 18, t.label, { size: 10.5, cls: 'mu' }))
+    out.push(text(x + 10, ty + 40, t.value, { size: 18, weight: 700 }))
+  })
+  y += Math.ceil(tiles.length / cols) * (th + gap) + 4
+
+  // Tokens by kind.
+  const barH = 8
+  out.push(`<defs><clipPath id="conv"><rect x="${pad}" y="${y}" width="${inner}" height="${barH}" rx="${barH / 2}"/></clipPath></defs>`)
+  out.push(`<rect class="track" x="${pad}" y="${y}" width="${inner}" height="${barH}" rx="${barH / 2}"/>`)
+  if (sum > 0) {
+    let x = pad
+    const segs = PARTS.map(part => {
+      const w = (c.tokens[part.key] / sum) * inner
+      const seg = w > 0 ? `<rect x="${x}" y="${y}" width="${w + 0.5}" height="${barH}" fill="${part.color}"/>` : ''
+      x += w
+      return seg
+    })
+    out.push(`<g clip-path="url(#conv)">${segs.join('')}</g>`)
+  }
+  y += barH + 18
+  let lx = pad
+  for (const part of PARTS) {
+    const label = `${part.label} ${fmtTokens(c.tokens[part.key])}`
+    const w = 14 + textWidth(label, 11) + 16
+    // Out of room: the legend goes on to a second line.
+    if (lx > pad && lx + w > W - pad + 16) {
+      lx = pad
+      y += 18
+    }
+    out.push(`<rect x="${lx}" y="${y - 8}" width="8" height="8" rx="2" fill="${part.color}"/>`)
+    out.push(text(lx + 13, y, label, { size: 11, cls: 'mu' }))
+    lx += w
+  }
+  y += 16
+
+  const height = y
+  const card = `<rect class="card" x="0.5" y="0.5" width="${W - 1}" height="${height - 1}" rx="12"/>`
+  const alt =
+    `This conversation: ${prompts} prompt${prompts === 1 ? '' : 's'} sent, ${c.modelCalls} model call${c.modelCalls === 1 ? '' : 's'}, ` +
+    `${c.toolCalls} tool call${c.toolCalls === 1 ? '' : 's'}, ${fmtTokens(sum)} tokens ` +
+    `(${PARTS.map(part => `${part.label} ${fmtTokens(c.tokens[part.key])}`).join(', ')})`
+  return { source: svg(W, height, card + out.join('')), height, alt }
 }

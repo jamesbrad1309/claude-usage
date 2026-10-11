@@ -227,3 +227,53 @@ test('the prompt list keeps a fixed height and scrolls inside, by wheel or ▲ �
   expect(await shown()).toEqual(['p7', 'p6', 'p5', 'p4'])
   await ui.unmount()
 })
+
+test('the conversation counter adds up every prompt, model call, tool call and token', async ($, on) => {
+  mock.clock(on)
+  on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
+  on('agent.spawn', async () => ({ model: 'claude-haiku-5-5', agentId: 'a1' }))
+  // Main-loop calls ask for one tool each; the subagent's ask for none.
+  on('turn.step', async function* (_$, e) {
+    const isAgent = Boolean(e.agentId)
+    return {
+      turnId: e.turnId,
+      index: e.index,
+      answer: '',
+      toolUses: isAgent ? [] : [{ id: `tool-${e.turnId}`, name: 'Read', input: {} }],
+      stopReason: 'end_turn',
+      usage: {
+        model: isAgent ? 'claude-haiku-5-5' : 'claude-opus-5-5',
+        input_tokens: isAgent ? 100 : 1000,
+        output_tokens: isAgent ? 50 : 500,
+        cache_read_input_tokens: isAgent ? 0 : 20000,
+        cache_creation_input_tokens: 0,
+      },
+    } as never
+  })
+  const step = async (e: object) => {
+    for await (const _ of $.turn.step({ messageCount: 1, ...e } as never)) void _
+  }
+  const send = (uuid: string, text: string) =>
+    $.session.append({ uuid, door: 'prompt', origin: COMPOSER, message: { type: 'user', role: 'user', content: [{ type: 'text', text }] } } as never)
+
+  await send('u1', 'First prompt')
+  await $.turn.start({ text: 'First prompt', turnId: 't1' })
+  await step({ turnId: 't1', index: 0, model: 'claude-opus-5-5' })
+  await $.agent.spawn({ tool_use_id: 'x1', prompt: 'p', description: 'Look around', subagentType: 'Explore' } as never)
+  await step({ turnId: 'r1', index: 0, model: 'claude-haiku-5-5', agentId: 'a1' })
+  await step({ turnId: 'r1', index: 1, model: 'claude-haiku-5-5', agentId: 'a1' })
+  await send('u2', 'Second prompt')
+  await $.turn.start({ text: 'Second prompt', turnId: 't2' })
+  await step({ turnId: 't2', index: 0, model: 'claude-opus-5-5' })
+
+  // 2 prompts; 2 main calls + 2 subagent calls; a tool per main call; 2 × 21,500 + 2 × 150 tokens.
+  const desk = await $.ui.mount({ ...PANE, surface: 'desktop', props: paneProps })
+  const card = await svgProps(desk, /^This conversation: /)
+  expect(card?.alt).toBe(
+    'This conversation: 2 prompts sent, 4 model calls, 2 tool calls, 43k tokens (in 2k, out 1k, cache read 40k, cache write 0)',
+  )
+  await desk.unmount()
+  const term = await $.ui.mount({ ...PANE, surface: 'terminal', props: paneProps })
+  expect(await term.find({ type: 'Text', text: /^  2 prompts · 4 model calls · 2 tool calls · 43k tokens$/ })).toBeDefined()
+  await term.unmount()
+})

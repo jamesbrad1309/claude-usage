@@ -1,10 +1,11 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementConstructor, EngineInterface, Register, SessionUsage, SvgProps, TurnUsage } from 'claude-code'
 
-import type { AgentRun, ModelUse, PromptRow, PromptRun, RunStatus, SessionFigures, Tokens } from '../types'
+import type { AgentRun, ConversationTotals, ModelUse, PromptRow, PromptRun, RunStatus, SessionFigures, Tokens } from '../types'
 import {
   agentRow,
   bandRow,
+  conversationCard,
   crabIcon,
   fmtTime,
   fmtTokens,
@@ -31,6 +32,7 @@ const session = atom({ plugin: 'usage-panel', key: 'session' } as const, {
 })
 const rows = atom({ plugin: 'usage-panel', key: 'rows' } as const, [])
 const listStart = atom({ plugin: 'usage-panel', key: 'listStart' } as const, 0)
+const totals = atom({ plugin: 'usage-panel', key: 'totals' } as const, null as ConversationTotals | null)
 
 // The prompt list is the pane's last section, a fixed window: its header, then PAGE cards of
 // CARD_ROWS rows (a border and three lines), each after a blank row. A wheel over it scrolls it.
@@ -62,6 +64,13 @@ const sum = (a: Tokens, b: Tokens): Tokens => ({
 
 /** The prompt's tokens: its main loop and every subagent. */
 const promptTokens = (p: PromptRun): Tokens => p.agents.reduce((t, a) => sum(t, a.tokens), p.tokens)
+
+// The conversation's totals before this mod counted them itself: what its prompts hold.
+const seedTotals = (list: PromptRun[]): ConversationTotals => ({
+  modelCalls: list.reduce((n, p) => n + p.calls + p.agents.reduce((m, a) => m + a.calls, 0), 0),
+  toolCalls: list.reduce((n, p) => n + p.tools + p.agents.reduce((m, a) => m + a.tools, 0), 0),
+  tokens: list.reduce((t, p) => sum(t, promptTokens(p)), zero()),
+})
 
 // Credits one model call to its model in the prompt's breakdown.
 const useModel = (models: ModelUse[], model: string, usage: TurnUsage | null, agentId?: string): ModelUse[] => {
@@ -210,6 +219,7 @@ export const register: Register = on => {
     if (e.reason === 'clear') {
       await update($, prompts, () => [])
       await update($, rows, () => [])
+      await update($, totals, () => null)
       await update($, session, s => ({ ...s, costUsd: 0 }))
     }
     return next(e)
@@ -291,6 +301,12 @@ export const register: Register = on => {
     const usage = result.usage
     const tools = result.toolUses.length
     const model = usage?.model || e.model
+    // The conversation's running totals: every call, main loop and subagents alike.
+    const held = await read($, prompts)
+    await update($, totals, c => {
+      const base = c ?? seedTotals(held.map(normalize))
+      return { modelCalls: base.modelCalls + 1, toolCalls: base.toolCalls + tools, tokens: usage ? add(base.tokens, usage) : base.tokens }
+    })
     if (e.agentId) {
       const id = e.agentId
       await update($, prompts, list =>
@@ -369,6 +385,7 @@ export const register: Register = on => {
     const s = await read($, session)
     const promptRows = await read($, rows)
     const isOpen = await read($, isListOpen)
+    const convo = (await read($, totals)) ?? seedTotals(list)
     const at = Math.max(await read($, now), ...list.map(p => p.startedAt), 0)
 
     const costOf = (p: PromptRun): number =>
@@ -522,6 +539,7 @@ export const register: Register = on => {
       const { Svg } = ui
       const W = Math.max(260, Math.min(900, (e.props.bodyColumns || 48) * 8 - 8))
       const tiles = sessionTiles(W, s)
+      const conv = conversationCard(W, promptRows.length, convo)
       const card = focus
         ? promptCard(W, focus, promptTokens(focus), {
             costUsd: costOf(focus),
@@ -533,6 +551,7 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column" gap={1}>
           <Svg key="tiles" source={tiles.source} alt={tiles.alt} width={W} height={tiles.height} />
+          <Svg key="conversation" source={conv.source} alt={conv.alt} width={W} height={conv.height} />
           {card ? (
             <Svg key="prompt" source={card.source} alt={card.alt} width={W} height={card.height} />
           ) : (
@@ -587,6 +606,19 @@ export const register: Register = on => {
             {(LIMIT_NAME[r.kind] ?? r.kind).padEnd(7)} <Text color={pctColor(r.percentUsed)}>{bar(r.percentUsed, barW)}</Text> {Math.round(r.percentUsed)}%
           </Text>
         ))}
+
+        <Box marginTop={1} flexDirection="column">
+          <Text bold>This conversation</Text>
+          <Text wrap="truncate-end">
+            {'  '}
+            <Text bold>{promptRows.length}</Text> prompts · <Text bold>{convo.modelCalls}</Text> model calls ·{' '}
+            <Text bold>{convo.toolCalls}</Text> tool calls · <Text bold>{fmtTokens(total(convo.tokens))}</Text> tokens
+          </Text>
+          <Text dimColor wrap="truncate-end">
+            {'  '}
+            {PARTS.map(p => `${p.label} ${fmtTokens(convo.tokens[p.key])}`).join(' · ')}
+          </Text>
+        </Box>
 
         <Box marginTop={1} flexDirection="column">
           <Text bold>This prompt</Text>
