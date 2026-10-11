@@ -92,9 +92,14 @@ test('the prompt totals tokens over the main loop and its subagents, by model', 
   expect(card?.source).toMatch(/^<svg /)
   // The count and its label share one <text>, so a wide number never runs into "tokens".
   expect(card?.source).toMatch(/<text [^>]*><tspan [^>]*>22k<\/tspan><tspan dx="7"[^>]*>tokens<\/tspan><\/text>/)
-  // Its record's last line: status, each model, the prompt's tokens.
-  expect(await recordText(desk, 'u1')).toMatch(/\nCount my tokens\nRunning 0s  ·  ● Opus 5\.5  ·  ● Haiku 5\.5  ·  22k tokens$/)
+  // Claude at work: the running mark is the animated crab, not a dot.
+  expect(card?.source).toMatch(/<g class="crab">/)
+  // Its record's last line, drawn like the counter: status, a pill per model, the tokens.
+  expect(await svgProps(desk, /^Running 0s · Opus 5\.5, Haiku 5\.5 · 22k tokens$/)).toBeDefined()
   await desk.unmount()
+  const listed = await $.ui.mount({ ...PANE, surface: 'terminal', props: paneProps })
+  expect(await recordText(listed, 'u1')).toMatch(/\nCount my tokens\nRunning 0s  ·  Opus 5\.5, Haiku 5\.5  ·  22k tokens$/)
+  await listed.unmount()
 })
 
 test('the band above the prompt shows the prompt’s tokens and model id', async ($, on) => {
@@ -136,7 +141,7 @@ test('every prompt of the session is listed once, newest first, with when it was
   // A notification is not one of your prompts.
   await append('n1', 'agent done', { kind: 'task-notification' })
 
-  // Your prompt's row is drawn inside a Box of the mod's, unchanged, so the list can scroll to it.
+  // Your prompt's row keeps the engine's drawing; the mod only notes the id it is drawn under.
   const row = await $.ui.mount({
     plugin: 'usage-panel',
     surface: 'desktop',
@@ -144,10 +149,7 @@ test('every prompt of the session is listed once, newest first, with when it was
     requestId: 'u1',
     props: { text: 'First prompt', origin: COMPOSER, isExpanded: false } as never,
   })
-  const drawnRow = (await row.drawn()) as { type: string; props: { key?: string }; children: { type: string }[] }
-  expect(drawnRow.type).toBe('Box')
-  expect(drawnRow.props.key).toBe('usage-panel:prompt:u1')
-  expect(drawnRow.children[0]?.type).toBe('Text')
+  expect(((await row.drawn()) as { type: string }).type).toBe('Text')
   await row.unmount()
   // A prompt from before the mod loaded: known only from its drawn row.
   const old = await $.ui.mount({
@@ -161,31 +163,74 @@ test('every prompt of the session is listed once, newest first, with when it was
   // Drawn rows are saved on the next event (or the ticker): here, the next prompt's turn.
   await $.turn.start({ text: 'Second prompt', turnId: 't2' })
 
+  // Newest first, three lines each: number and sent time; the prompt; done time, models, tokens.
+  const term = await $.ui.mount({ ...PANE, surface: 'terminal', props: paneProps })
+  expect(await term.find({ type: 'Button', text: /Prompts in this session · 3/ })).toBeDefined()
+  expect(await recordIds(term)).toEqual(['jump:u2', 'jump:u1', 'jump:m0'])
+  expect(await recordText(term, 'u2')).toMatch(/^#3  ·  Sent \d\d:\d\d:\d\d\nSecond prompt\nRunning 0s  ·  no model yet  ·  0 tokens$/)
+  expect(await recordText(term, 'u1')).toMatch(/^#2  ·  Sent \d\d:\d\d:\d\d\nFirst prompt\nDone \d\d:\d\d:\d\d · 1m 05s  ·  no model yet  ·  0 tokens$/)
+  expect(await recordText(term, 'm0')).toBe('#1  ·  Sent before the panel was watching\nPrompt from before\nNo figures: sent before the panel was watching')
+  await term.unmount()
+
+  // On the desktop: cards that tint on hover, the newest outlined; the running one has the crab.
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: paneProps })
-  expect(await ui.find({ type: 'Button', text: /Prompts in this session · 3/ })).toBeDefined()
-  const records = await recordIds(ui)
-  // Newest first, three lines each: index and sent time; the prompt; done time, models, tokens.
-  expect(records).toEqual(['jump:u2', 'jump:u1', 'jump:m0'])
-  expect(await recordText(ui, 'u2')).toMatch(/^#3  ·  Sent \d\d:\d\d:\d\d\nSecond prompt\nRunning 0s  ·  no tokens yet$/)
-  expect(await recordText(ui, 'u1')).toMatch(/^#2  ·  Sent \d\d:\d\d:\d\d\nFirst prompt\nDone \d\d:\d\d:\d\d \(1m 05s\)  ·  no tokens yet$/)
-  expect(await recordText(ui, 'm0')).toBe('#1  ·  Sent before the panel was watching\nPrompt from before\nNo figures: sent before the panel was watching')
-  // Each record sits in a card that lights on hover; the newest outlined in the accent.
   const cards = (await ui.findAll({ type: 'Box' })).filter(b => b.props.borderStyle === 'round')
   expect(cards.map(c => c.props.borderColor)).toEqual(['claude', 'subtle', 'subtle'])
-  // (a hover is kept beside the props, on the drawn element)
+  expect(cards.every(c => c.props.height === 5)).toBe(true)
   const tree = JSON.stringify(await ui.drawn())
   for (const id of ['u2', 'u1', 'm0']) {
     expect(tree).toMatch(new RegExp(`"key":"card:${id}"[^}]*\\},"hover":\\{"borderColor":"claude","backgroundColor":"#8080802a"\\}`))
   }
-  // A dot starts each record, coloured by status: running, done, no figures.
+  expect(await svgProps(ui, /^Claude at work$/)).toBeDefined()
   const dots = (await ui.findAll({ type: 'Text' })).filter(x => x.text === '●')
-  expect(dots.map(d => d.props.color)).toEqual(['suggestion', 'success', 'inactive'])
+  expect(dots.map(d => d.props.color)).toEqual(['success', 'inactive'])
+  expect(await svgProps(ui, /^Working on: Second prompt/)).toBeDefined()
 
-  // Every line of a record is its own button, laid out as a column of three lines.
-  const lines = JSON.stringify(await ui.drawn()).match(/"key":"lines:u1","flexDirection":"column"\},"children":\[(\{"type":"Button")/)
-  expect(lines?.[1]).toBe('{"type":"Button"')
-  // The test kit has no conversation to scroll: the pane says so instead of doing nothing.
+  // A click opens the prompt: the prompt card shows it, with a way back. (The test kit has no
+  // conversation to scroll, so the list's note says why it did not move.)
   await ui.press({ key: 'jump:u1:prompt' })
+  expect(await svgProps(ui, /^Selected prompt: First prompt/)).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^Couldn't scroll to that prompt: / })).toBeDefined()
+  const selectedCards = (await ui.findAll({ type: 'Box' })).filter(b => b.props.borderStyle === 'round')
+  expect(selectedCards.map(c => c.props.borderColor)).toEqual(['subtle', 'claude', 'subtle'])
+  await ui.press({ key: 'back-to-latest' })
+  expect(await svgProps(ui, /^Working on: Second prompt/)).toBeDefined()
+  await ui.unmount()
+})
+
+test('the prompt list keeps a fixed height and scrolls inside, by wheel or ▲ ▼', async ($, on) => {
+  mock.clock(on)
+  on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
+  // The engine's own scrolling of the pane, beneath the mod.
+  const paneMoves: number[] = []
+  on('ui.scroll', async (_$, e) => {
+    paneMoves.push(e.by)
+    return {}
+  })
+  for (let i = 1; i <= 7; i++) {
+    await $.session.append({ uuid: `p${i}`, door: 'prompt', origin: COMPOSER, message: { type: 'user', role: 'user', content: [{ type: 'text', text: `Prompt ${i}` }] } } as never)
+  }
+  const shown = async () => (await recordIds(ui)).map(k => k.slice('jump:'.length))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: paneProps })
+  const list = (await ui.findAll({ type: 'Box' })).find(b => b.key === 'prompt-list')
+  expect(list?.props.height).toBe(22)
+  expect(await shown()).toEqual(['p7', 'p6', 'p5', 'p4'])
+  expect(await ui.find({ type: 'Text', text: '1–4 of 7' })).toBeDefined()
+
+  // A wheel tick over the list (its rows are the pane's last 22) moves the list a card, not the pane.
+  const tick = (by: number, row: number) =>
+    $.ui.scroll({ component: 'Pane', requestId: 'usage-panel', offset: 10 + by, by, bodyRows: 30, contentRows: 60, origin: { kind: 'person' }, pointer: { row, column: 4 } } as never)
+  await tick(1, 45) // tree row 55: in the list
+  expect(await shown()).toEqual(['p6', 'p5', 'p4', 'p3'])
+  expect(paneMoves).toEqual([])
+  await tick(1, 5) // tree row 15: above the list, so the pane scrolls
+  expect(paneMoves).toEqual([1])
+  expect(await shown()).toEqual(['p6', 'p5', 'p4', 'p3'])
+
+  // ▼ pages to the oldest, ▲ back to the newest.
+  await ui.press({ key: 'list-older' })
+  expect(await shown()).toEqual(['p4', 'p3', 'p2', 'p1'])
+  await ui.press({ key: 'list-newer' })
+  expect(await shown()).toEqual(['p7', 'p6', 'p5', 'p4'])
   await ui.unmount()
 })

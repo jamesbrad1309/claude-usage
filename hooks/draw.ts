@@ -12,7 +12,10 @@ const CSS = `<style>
 .fg{fill:#1c1c1b}.mu{fill:#6b6a66}.su{fill:#9a9994}.card{fill:#f7f6f3;stroke:#e7e5e0}.track{fill:#ebe9e4}.ln{stroke:#e7e5e0}
 @media (prefers-color-scheme: dark){.fg{fill:#ededeb}.mu{fill:#a9a8a3}.su{fill:#7c7b77}.card{fill:#222221;stroke:#343432}.track{fill:#30302e}.ln{stroke:#343432}}
 .live{animation:pulse 1.6s ease-in-out infinite}@keyframes pulse{50%{opacity:.3}}
-@media (prefers-reduced-motion: reduce){.live{animation:none}}
+.crab .la{animation:step .5s steps(1) infinite}.crab .lb{animation:step .5s steps(1) infinite -.25s}
+.crab .bd{animation:bob .5s steps(1) infinite -.125s}.crab .cl{animation:wave 1s steps(1) infinite}.crab .cr{animation:wave 1s steps(1) infinite -.5s}
+@keyframes step{50%{transform:translateY(-1px)}}@keyframes bob{50%{transform:translateY(1px)}}@keyframes wave{50%{transform:translateY(-2px)}}
+@media (prefers-reduced-motion: reduce){.live,.crab *{animation:none!important}}
 </style>`
 
 const svg = (W: number, H: number, body: string): string =>
@@ -108,9 +111,36 @@ const pctColor = (pct: number): string => (pct >= 90 ? '#D0453F' : pct >= 70 ? '
 
 const LIMIT_NAME: Record<string, string> = { five_hour: '5-hour limit', seven_day: '7-day limit', spend_limit: 'Spend limit' }
 
+// Claude at work: the pixel crab, 24×16 on its grid, scaled to `w` and centred on (cx, cy).
+// Its legs step, its body bobs and its claws wave (CSS, so no redraws).
+const CLAY = '#D97757'
+const INK = '#1F1E1D'
+export const crab = (cx: number, cy: number, w = 16): string => {
+  const k = w / 24
+  const px = (x: number, y: number, pw: number, ph: number, fill: string, cls = '') =>
+    `<rect${cls ? ` class="${cls}"` : ''} x="${x}" y="${y}" width="${pw}" height="${ph}" fill="${fill}"/>`
+  return (
+    `<g transform="translate(${cx - w / 2},${cy - 8 * k}) scale(${k})" shape-rendering="crispEdges"><g class="crab">` +
+    `<g class="bd">${px(4, 0, 16, 12, CLAY)}${px(6, 3, 2, 2, INK)}${px(16, 3, 2, 2, INK)}</g>` +
+    px(0, 4, 4, 4, CLAY, 'cl') +
+    px(20, 4, 4, 4, CLAY, 'cr') +
+    px(4, 12, 2, 4, CLAY, 'la') +
+    px(14, 12, 2, 4, CLAY, 'la') +
+    px(8, 12, 2, 4, CLAY, 'lb') +
+    px(18, 12, 2, 4, CLAY, 'lb') +
+    '</g></g>'
+  )
+}
+
+/** The crab alone, for a row drawn with text (the prompt list's dot while a prompt runs). */
+export const crabIcon = (w = 16): { source: string; width: number; height: number } => {
+  const h = Math.ceil((w * 16) / 24) + 2
+  return { source: svg(w, h, crab(w / 2, h / 2, w)), width: w, height: h }
+}
+
 const statusMark = (x: number, y: number, status: RunStatus): string => {
   const c = STATUS_COLOR[status]
-  if (status === 'running') return `<circle class="live" cx="${x}" cy="${y}" r="4" fill="${c}"/>`
+  if (status === 'running') return crab(x, y, 16)
   if (status === 'done') return `<path d="M${x - 4.5} ${y}l3 3 6-6.5" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`
   if (status === 'aborted') return `<rect x="${x - 3.5}" y="${y - 3.5}" width="7" height="7" rx="1.5" fill="${c}"/>`
   return `<path d="M${x - 3.5} ${y - 3.5}l7 7M${x + 3.5} ${y - 3.5}l-7 7" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/>`
@@ -178,7 +208,7 @@ export function promptCard(
   W: number,
   p: PromptRun,
   t: Tokens,
-  extra: { costUsd: number; elapsedMs: number; calls: number; tools: number },
+  extra: { costUsd: number; elapsedMs: number; calls: number; tools: number; title?: string },
 ): { source: string; height: number; alt: string } {
   const pad = 14
   const inner = W - pad * 2
@@ -189,7 +219,8 @@ export function promptCard(
   // Status, elapsed and cost.
   y += 22
   out.push(statusMark(pad + 4, y - 4, p.status))
-  out.push(text(pad + 16, y, p.status === 'running' ? 'Working on your prompt' : 'Last prompt', { size: 11, cls: 'mu', weight: 500 }))
+  const title = extra.title ?? (p.status === 'running' ? 'Working on your prompt' : 'Last prompt')
+  out.push(text(pad + 16, y, title, { size: 11, cls: 'mu', weight: 500 }))
   out.push(text(W - pad, y, `${fmtTime(extra.elapsedMs)}  ·  ≈${fmtUsd(extra.costUsd)}`, { size: 11, cls: 'mu', anchor: 'end' }))
 
   // The prompt itself.
@@ -249,7 +280,7 @@ export function promptCard(
   const height = y
   const card = `<rect class="card" x="0.5" y="0.5" width="${W - 1}" height="${height - 1}" rx="12"/>`
   const alt =
-    `${p.status === 'running' ? 'Working on' : 'Last prompt'}: ${p.text}. ${fmtTokens(sum)} tokens ` +
+    `${extra.title ?? (p.status === 'running' ? 'Working on' : 'Last prompt')}: ${p.text}. ${fmtTokens(sum)} tokens ` +
     `(${PARTS.map(part => `${part.label} ${fmtTokens(t[part.key])}`).join(', ')}). ` +
     `Models: ${p.models.map(m => `${modelName(m.model)} (${m.model}) ${whereOf(m)} ${fmtTokens(total(m.tokens))}`).join('; ') || 'none yet'}.`
   return { source: svg(W, height, card + out.join('')), height, alt }
@@ -313,8 +344,8 @@ export function agentRow(W: number, a: AgentRun, depth: number, elapsedMs: numbe
 export function bandRow(W: number, p: PromptRun, t: Tokens, elapsedMs: number, costUsd: number): { source: string; height: number } {
   const H = 24
   const mid = H / 2
-  const parts: string[] = [statusMark(6, mid, p.status)]
-  let x = 18
+  const parts: string[] = [statusMark(9, mid, p.status)]
+  let x = 22
 
   const mainModel = p.model || p.models[0]?.model || ''
   if (mainModel) {
@@ -353,4 +384,54 @@ export function bandRow(W: number, p: PromptRun, t: Tokens, elapsedMs: number, c
   parts.push(spans(W - 2, mid + 5, right, 'end'))
 
   return { source: svg(W, H, parts.join('')), height: H }
+}
+
+// ---- pane: a prompt record's last line ---------------------------------------------------
+
+/**
+ * The third line of a prompt record, in the token counter's style: when it finished (or how
+ * long it has run), a pill per model, a stacked bar of its tokens, and the count, bold, at the
+ * right. Without a run: a note that it has no figures.
+ */
+export function recordMeta(W: number, p: PromptRun | undefined, t: Tokens | undefined, done: string): { source: string; height: number; alt: string } {
+  const H = 18
+  const mid = H / 2
+  if (!p || !t) {
+    const note = 'No figures: sent before the panel was watching'
+    return { source: svg(W, H, text(0, mid + 4, note, { size: 11, cls: 'su' })), height: H, alt: note }
+  }
+  const sum = total(t)
+  const parts: string[] = [text(0, mid + 4, done, { size: 11, fill: STATUS_COLOR[p.status], weight: 500 })]
+  let x = textWidth(done, 11, false, true) + 10
+
+  // The count at the right edge, laid out with its label by the renderer.
+  const count = sum > 0 ? fmtTokens(sum) : '0'
+  const countW = textWidth(count, 12.5, false, true) + 5 + textWidth('tokens', 10.5)
+  parts.push(spans(W, mid + 4.5, [{ s: count, size: 12.5, weight: 700 }, { s: 'tokens', size: 10.5, cls: 'mu', gap: 5 }], 'end'))
+  const right = W - countW - 10
+
+  for (const m of p.models) {
+    const label = modelName(m.model)
+    const w = textWidth(label, 10, false, true) + 14
+    if (x + w > right - 40) break
+    parts.push(pill(x, mid - 8, label, modelColor(m.model), 10).markup)
+    x += w + 4
+  }
+
+  // The stacked bar fills what is left between the pills and the count.
+  const barW = right - x - 4
+  if (barW >= 30 && sum > 0) {
+    const y = mid - 2.5
+    let bx = x + 4
+    const segs = PARTS.map(part => {
+      const w = (t[part.key] / sum) * barW
+      const seg = w > 0 ? `<rect x="${bx}" y="${y}" width="${w + 0.5}" height="5" fill="${part.color}"/>` : ''
+      bx += w
+      return seg
+    })
+    parts.push(`<defs><clipPath id="mix"><rect x="${x + 4}" y="${y}" width="${barW}" height="5" rx="2.5"/></clipPath></defs>`)
+    parts.push(`<rect class="track" x="${x + 4}" y="${y}" width="${barW}" height="5" rx="2.5"/><g clip-path="url(#mix)">${segs.join('')}</g>`)
+  }
+  const alt = `${done} · ${p.models.map(m => modelName(m.model)).join(', ') || 'no model yet'} · ${count} tokens`
+  return { source: svg(W, H, parts.join('')), height: H, alt }
 }

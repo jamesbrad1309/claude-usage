@@ -83,6 +83,10 @@ declare module 'claude-code' {
       session: SessionFigures
       rows: PromptRow[]
       jump: JumpResult | null
+      /** The prompt record you clicked: the pane's prompt card shows it (null: the latest). */
+      selected: string | null
+      /** How many records the list has scrolled past, newest first. */
+      listStart: number
       isListOpen: boolean
       now: number
     }
