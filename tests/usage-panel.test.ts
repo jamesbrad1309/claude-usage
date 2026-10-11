@@ -177,7 +177,10 @@ test('every prompt of the session is listed once, newest first, with when it was
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: paneProps })
   const cards = (await ui.findAll({ type: 'Box' })).filter(b => b.props.borderStyle === 'round')
   expect(cards.map(c => c.props.borderColor)).toEqual(['claude', 'subtle', 'subtle'])
-  expect(cards.every(c => c.props.height === 5 && c.props.marginTop === 1)).toBe(true)
+  expect(cards.every(c => c.props.height === 5 && c.props.marginTop === 1 && c.props.alignItems === 'flex-start')).toBe(true)
+  // Each card's mark sits at its top left, not centred on its lines.
+  const marks = (await ui.findAll({ type: 'Box' })).filter(b => b.key?.startsWith('mark:'))
+  expect(marks.map(m => [m.key, m.props.alignSelf])).toEqual([['mark:u2', 'flex-start'], ['mark:u1', 'flex-start'], ['mark:m0', 'flex-start']])
   expect((await ui.findAll({ type: 'Button' })).map(b => b.key)).toEqual(['list-toggle'])
   const tree = JSON.stringify(await ui.drawn())
   for (const id of ['u2', 'u1', 'm0']) {

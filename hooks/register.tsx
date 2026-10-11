@@ -489,6 +489,7 @@ export const register: Register = on => {
           <Box
             key={`card:${row.id}`}
             flexDirection="row"
+            alignItems="flex-start"
             gap={1}
             height={CARD_ROWS}
             borderStyle="round"
@@ -497,16 +498,19 @@ export const register: Register = on => {
             paddingX={1}
             marginTop={GAP_ROWS}
           >
-            {/* On the desktop, Claude marks a running prompt (walking) and a finished one (cheering). */}
-            {desk && status === 'running' ? (
-              <desk.Svg key={`crab:${row.id}`} source={CRAB.source} alt="Claude at work" width={CRAB.width} height={CRAB.height} />
-            ) : desk && status === 'done' ? (
-              <desk.Svg key={`crab:${row.id}`} source={CRAB_DONE.source} alt="Completed" width={CRAB_DONE.width} height={CRAB_DONE.height} />
-            ) : (
-              <Text key={`dot:${row.id}`} color={status ? STATUS_TEXT[status] : 'inactive'}>
-                ●
-              </Text>
-            )}
+            {/* The mark sits at the card's top left, beside its first line. On the desktop, Claude
+                marks a running prompt (walking) and a finished one (cheering). */}
+            <Box key={`mark:${row.id}`} alignSelf="flex-start" flexShrink={0}>
+              {desk && status === 'running' ? (
+                <desk.Svg key={`crab:${row.id}`} source={CRAB.source} alt="Claude at work" width={CRAB.width} height={CRAB.height} />
+              ) : desk && status === 'done' ? (
+                <desk.Svg key={`crab:${row.id}`} source={CRAB_DONE.source} alt="Completed" width={CRAB_DONE.width} height={CRAB_DONE.height} />
+              ) : (
+                <Text key={`dot:${row.id}`} color={status ? STATUS_TEXT[status] : 'inactive'}>
+                  ●
+                </Text>
+              )}
+            </Box>
             <Box key={`lines:${row.id}`} flexDirection="column" flexGrow={1}>
               {head}
               {text}
