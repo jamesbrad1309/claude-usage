@@ -1,43 +1,110 @@
-# claude-usage
+<div align="center">
 
-A Claude Code mod (`usage-panel`) that shows, live, what each of your prompts is using.
+# 📊 claude-usage
 
-- **Usage pane** (opens with the session; `/usage-panel` shows or hides it)
-  - **Session:** cost, context window fill, and your 5-hour and 7-day rate limits.
-  - **This prompt:** total tokens across the main conversation and every subagent, split into input, output, cache reads and cache writes; each model that worked on it (name and id), with its calls, tokens and whether it ran the main conversation or subagents.
-  - **Subagents:** every subagent the prompt started, nested under the one that started it, with model, status, time, calls, tools and tokens.
-  - **Prompts in this session:** every prompt you typed, newest first, with its tokens and models. Click one to scroll the conversation to it.
-- **Band above the prompt input:** the current prompt's model id, other models used, tokens, elapsed time and cost.
+**See what every prompt costs you in Claude Code: tokens, models and subagents, live.**
 
-On the desktop app the pane and band are drawn as cards and bars; in a terminal, as text.
+`usage-panel` is a Claude Code mod: a live **Usage** pane beside the conversation and a one-line band above the prompt input.
 
-## Install
+![version](https://img.shields.io/badge/version-0.2.0-7F77DD) ![Claude Code](https://img.shields.io/badge/Claude%20Code-mod-D97757) ![surfaces](https://img.shields.io/badge/desktop%20%2B%20terminal-supported-1D9E75) ![license](https://img.shields.io/badge/license-MIT-888780)
 
-On each machine, at the prompt of a terminal `claude` session:
+</div>
+
+---
+
+## ⚡ Install
+
+On each device, in any shell:
+
+```bash
+gh api repos/jamesbrad1309/claude-usage/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
+```
+
+Then start a new Claude Code session: the Usage pane opens on its own.
+
+<details>
+<summary>Other ways to install</summary>
+
+**Two commands, no script:**
+
+```bash
+claude plugin marketplace add jamesbrad1309/claude-usage
+claude plugin install usage-panel@claude-usage --scope user
+```
+
+**From inside a terminal `claude` session:**
 
 ```
 /plugin install usage-panel --marketplace jamesbrad1309/claude-usage
 ```
 
-Answer `y` to add the marketplace, then pick the **user** scope so every session loads it, the desktop app's included. This repository is private: the machine needs access to it on GitHub (`gh auth login`, or an SSH key).
+Answer `y` to add the marketplace, then pick the **user** scope.
 
-Update after a change is pushed:
+**Only for one project:** run the script with `SCOPE=project` (shared through the project's `.claude/settings.json`) or `SCOPE=local` (just you).
 
+</details>
+
+> [!NOTE]
+> This repository is **private**, so each device needs GitHub access: run `gh auth login` first, or have an SSH key on your account.
+
+## ✨ What you get
+
+### Above the prompt input
+
+One line for the prompt in progress (or the last one):
+
+| | |
+| --- | --- |
+| **Model** | the main model as a chip, with its full id (`claude-opus-5-5`), plus a chip for each other model its subagents used |
+| **Tokens** | the prompt's total across the main conversation and every subagent, and how many were output |
+| **Time · cost** | how long it has run, and what it cost |
+| **Usage** | a button that shows or hides the pane |
+
+### The Usage pane
+
+| Section | Shows |
+| --- | --- |
+| **Session** | cost so far, context window fill, and the 5-hour and 7-day rate limits, with meters that turn amber at 70% and red at 90% |
+| **This prompt** | total tokens with a bar split into input, output, cache reads and cache writes; each model that worked on it: name, id, calls, tokens, share, and whether it ran the main conversation or subagents |
+| **Subagents** | each subagent the prompt started, nested under the one that started it, with live status, model, time, calls, tools and tokens |
+| **Prompts in this session** | every prompt you typed, newest first, as cards with tokens, models and a bar sized against the session's biggest prompt. **Click one to scroll the conversation to it.** |
+
+The desktop app draws cards, bars and chips; a terminal gets the same figures as text. `/usage-panel` shows or hides the pane.
+
+## 🔄 Update · remove
+
+```bash
+# after a new version is pushed (the install script does this too)
+claude plugin marketplace update claude-usage && claude plugin update usage-panel@claude-usage
+
+# remove
+claude plugin uninstall usage-panel@claude-usage
 ```
-claude plugin update usage-panel
+
+Start a new session afterwards for the change to load.
+
+## 📐 How the figures are counted
+
+- **Tokens** come from each model call's usage as the API reports it, main conversation and subagents together. Cache reads usually dominate: each call re-reads the conversation from cache, at a fraction of the price of fresh input.
+- **Cost** is Claude Code's own ledger, the one `/cost` totals. A prompt's cost is how much the session's total grew while it ran, subagents included; subagents show tokens, not dollars.
+- **Per session:** each session shows only its own prompts. Nothing leaves your machine.
+- Prompts sent before the mod loaded are listed once the conversation has drawn them, without figures.
+
+## 🛠 Develop
+
+```bash
+claude plugin validate .   # manifest, marketplace and hooks module
+claude plugin test .       # behaviour tests, terminal and desktop
+claude --plugin-dir .      # run a session with this working copy
 ```
 
-## Notes
+| File | Role |
+| --- | --- |
+| `hooks/register.tsx` | the hooks: bookkeeping, the pane, the band, the terminal views |
+| `hooks/draw.ts` | the desktop drawings (SVG) |
+| `types/index.d.ts` | the state contract |
+| `tests/usage-panel.test.ts` | behaviour tests |
+| `install.sh` | installs or updates the mod on a device |
+| `.claude-plugin/` | the mod's manifest and the marketplace that lists it |
 
-- Costs come from Claude Code's own ledger (what `/cost` shows). A prompt's cost is the change in the session's total while it ran, subagents included. Subagents show tokens, not dollars.
-- Figures are per session; nothing is sent anywhere.
-- Prompts sent before the mod loaded are listed once the conversation has drawn them.
-
-## Develop
-
-```
-claude plugin validate .
-claude plugin test .
-```
-
-`hooks/register.tsx` keeps the state and draws the terminal views; `hooks/draw.ts` draws the desktop SVGs; `types/index.d.ts` is the state contract; `tests/` holds the behaviour tests.
+To release: bump `version` in both `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`, push, then update on each device.
