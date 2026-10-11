@@ -1,0 +1,14 @@
+{
+  "name": "claude-usage",
+  "owner": { "name": "James", "url": "https://github.com/jamesbrad1309" },
+  "metadata": { "description": "A Claude Code mod that shows token usage, models and subagents live." },
+  "plugins": [
+    {
+      "name": "usage-panel",
+      "source": "./",
+      "description": "Live Usage pane and a band above the prompt: tokens, models, subagents, cost and every prompt of the session.",
+      "version": "0.2.0",
+      "category": "mod"
+    }
+  ]
+}
