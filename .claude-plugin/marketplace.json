@@ -1,6 +1,6 @@
 {
   "name": "claude-usage",
-  "owner": { "name": "James", "url": "https://github.com/jamesbrad1309" },
+  "owner": { "name": "James", "url": "https://github.com/jamesnguyen1309" },
   "metadata": { "description": "A Claude Code mod that shows token usage, models and subagents live." },
   "plugins": [
     {

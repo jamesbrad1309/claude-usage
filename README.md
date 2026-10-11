@@ -17,7 +17,7 @@
 On each device, in any shell:
 
 ```bash
-gh api repos/jamesbrad1309/claude-usage/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
+gh api repos/jamesnguyen1309/claude-usage/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
 ```
 
 Then start a new Claude Code session: the Usage pane opens on its own.
@@ -28,14 +28,14 @@ Then start a new Claude Code session: the Usage pane opens on its own.
 **Two commands, no script:**
 
 ```bash
-claude plugin marketplace add jamesbrad1309/claude-usage
+claude plugin marketplace add jamesnguyen1309/claude-usage
 claude plugin install usage-panel@claude-usage --scope user
 ```
 
 **From inside a terminal `claude` session:**
 
 ```
-/plugin install usage-panel --marketplace jamesbrad1309/claude-usage
+/plugin install usage-panel --marketplace jamesnguyen1309/claude-usage
 ```
 
 Answer `y` to add the marketplace, then pick the **user** scope.

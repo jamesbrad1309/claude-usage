@@ -2,9 +2,9 @@
   "name": "usage-panel",
   "version": "0.6.4",
   "description": "Live Usage pane and a band above the prompt: session cost, context and rate limits; each prompt's tokens, models and subagents; and every prompt of the session, click to scroll to it (/usage-panel).",
-  "author": { "name": "James", "url": "https://github.com/jamesbrad1309" },
-  "homepage": "https://github.com/jamesbrad1309/claude-usage",
-  "repository": "https://github.com/jamesbrad1309/claude-usage",
+  "author": { "name": "James", "url": "https://github.com/jamesnguyen1309" },
+  "homepage": "https://github.com/jamesnguyen1309/claude-usage",
+  "repository": "https://github.com/jamesnguyen1309/claude-usage",
   "license": "MIT",
   "types": "./types/index.d.ts"
 }

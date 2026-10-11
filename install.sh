@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Installs (or updates) the usage-panel mod for Claude Code on this machine.
 #
-#   gh api repos/jamesbrad1309/claude-usage/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
+#   gh api repos/jamesnguyen1309/claude-usage/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
 #
 # SCOPE=user (default: every session on this machine), project or local.
 set -euo pipefail
 
-REPO="jamesbrad1309/claude-usage"
+REPO="jamesnguyen1309/claude-usage"
 MARKETPLACE="claude-usage"
 PLUGIN="usage-panel"
 SCOPE="${SCOPE:-user}"
