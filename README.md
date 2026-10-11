@@ -44,9 +44,6 @@ Answer `y` to add the marketplace, then pick the **user** scope.
 
 </details>
 
-> [!NOTE]
-> This repository is **private**, so each device needs GitHub access: run `gh auth login` first, or have an SSH key on your account.
-
 ## ✨ What you get
 
 ### Above the prompt input
