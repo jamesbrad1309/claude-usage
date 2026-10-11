@@ -132,6 +132,28 @@ export const crab = (cx: number, cy: number, w = 16): string => {
   )
 }
 
+// Claude, done: the crab standing still with both claws raised, cheering. 24×20 on
+// its grid, scaled to `w` and centred on (cx, cy).
+export const crabDone = (cx: number, cy: number, w = 16): string => {
+  const k = w / 24
+  const px = (x: number, y: number, pw: number, ph: number, fill = CLAY) => `<rect x="${x}" y="${y}" width="${pw}" height="${ph}" fill="${fill}"/>`
+  return (
+    `<g transform="translate(${cx - w / 2},${cy - 10 * k}) scale(${k})" shape-rendering="crispEdges">` +
+    // claws up, on arms reaching from the body's sides
+    px(0, 0, 4, 4) + px(1, 4, 2, 4) + px(20, 0, 4, 4) + px(21, 4, 2, 4) +
+    px(3, 7, 1, 2) + px(20, 7, 1, 2) +
+    px(4, 4, 16, 12) + px(6, 7, 2, 2, INK) + px(16, 7, 2, 2, INK) +
+    px(4, 16, 2, 4) + px(8, 16, 2, 4) + px(14, 16, 2, 4) + px(18, 16, 2, 4) +
+    '</g>'
+  )
+}
+
+/** The done crab alone, for a row drawn with text (the prompt list's mark for a finished prompt). */
+export const crabDoneIcon = (w = 16): { source: string; width: number; height: number } => {
+  const h = Math.ceil((w * 20) / 24) + 2
+  return { source: svg(w, h, crabDone(w / 2, h / 2, w)), width: w, height: h }
+}
+
 /** The crab alone, for a row drawn with text (the prompt list's dot while a prompt runs). */
 export const crabIcon = (w = 16): { source: string; width: number; height: number } => {
   const h = Math.ceil((w * 16) / 24) + 2

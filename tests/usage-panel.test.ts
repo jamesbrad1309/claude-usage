@@ -183,9 +183,13 @@ test('every prompt of the session is listed once, newest first, with when it was
   for (const id of ['u2', 'u1', 'm0']) {
     expect(tree).toMatch(new RegExp(`"key":"card:${id}"[^}]*\\},"hover":\\{"borderColor":"claude","backgroundColor":"#8080802a"\\}`))
   }
+  // Claude marks the running prompt (walking) and the finished one (cheering); a prompt with no
+  // figures keeps a grey dot.
   expect(await svgProps(ui, /^Claude at work$/)).toBeDefined()
+  const cheering = await svgProps(ui, /^Completed$/)
+  expect(cheering?.source).not.toMatch(/class="crab"/)
   const dots = (await ui.findAll({ type: 'Text' })).filter(x => x.text === '●')
-  expect(dots.map(d => d.props.color)).toEqual(['success', 'inactive'])
+  expect(dots.map(d => d.props.color)).toEqual(['inactive'])
   expect(await svgProps(ui, /^Working on: Second prompt/)).toBeDefined()
 
   await ui.unmount()

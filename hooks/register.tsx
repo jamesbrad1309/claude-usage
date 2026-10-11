@@ -6,6 +6,7 @@ import {
   agentRow,
   bandRow,
   conversationCard,
+  crabDoneIcon,
   crabIcon,
   fmtTime,
   fmtTokens,
@@ -41,6 +42,7 @@ const CARD_ROWS = 5
 const GAP_ROWS = 1
 const LIST_ROWS = 1 + PAGE * (GAP_ROWS + CARD_ROWS)
 const CRAB = crabIcon(16)
+const CRAB_DONE = crabDoneIcon(16)
 const isListOpen = atom({ plugin: 'usage-panel', key: 'isListOpen' } as const, true)
 const now = atom({ plugin: 'usage-panel', key: 'now' } as const, 0)
 
@@ -495,8 +497,11 @@ export const register: Register = on => {
             paddingX={1}
             marginTop={GAP_ROWS}
           >
+            {/* On the desktop, Claude marks a running prompt (walking) and a finished one (cheering). */}
             {desk && status === 'running' ? (
               <desk.Svg key={`crab:${row.id}`} source={CRAB.source} alt="Claude at work" width={CRAB.width} height={CRAB.height} />
+            ) : desk && status === 'done' ? (
+              <desk.Svg key={`crab:${row.id}`} source={CRAB_DONE.source} alt="Completed" width={CRAB_DONE.width} height={CRAB_DONE.height} />
             ) : (
               <Text key={`dot:${row.id}`} color={status ? STATUS_TEXT[status] : 'inactive'}>
                 ●
