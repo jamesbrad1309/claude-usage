@@ -106,12 +106,18 @@ test('the prompt totals tokens over the main loop and its subagents, by model', 
 
 test('the band above the prompt shows the prompt’s tokens and model id', async ($, on) => {
   engine(on)
+  // Another plugin's row beneath this one in the shared band.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return h(Text, { key: 'beneath' }, 'beneath') as never
+  })
   await $.turn.start({ text: 'Count my tokens', turnId: 't1' })
   for await (const _ of $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 1 } as never)) void _
 
   const term = await $.ui.mount({ ...BAND, surface: 'terminal', props: bandProps })
   expect(await term.find({ type: 'Text', text: /claude-opus-5-5/ })).toBeDefined()
   expect(await term.find({ type: 'Text', text: /22k tokens/ })).toBeDefined()
+  expect(await term.find({ text: 'beneath' })).toBeDefined()
   await term.unmount()
 
   const desk = await $.ui.mount({ ...BAND, surface: 'desktop', props: bandProps })
@@ -120,6 +126,7 @@ test('the band above the prompt shows the prompt’s tokens and model id', async
   expect(band?.source).toMatch(/claude-opus-5-5/)
   expect(band?.source).toMatch(/<text [^>]*text-anchor="end"><tspan [^>]*>22k<\/tspan><tspan dx="5"[^>]*>tokens<\/tspan>/)
   expect(await desk.find({ type: 'Button', key: 'usage-open' })).toBeDefined()
+  expect(await desk.find({ text: 'beneath' })).toBeDefined()
   await desk.unmount()
 })
 

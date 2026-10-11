@@ -690,6 +690,8 @@ export const register: Register = on => {
     const list = await read($, prompts)
     const last = list.at(-1)
     if (!last || e.props.hasSurvey) return next(e)
+    // The band is shared: what the plugins beneath draw there stays, below this row.
+    const below = await next(e)
     const p = normalize(last)
     const s = await read($, session)
     const at = Math.max(await read($, now), p.startedAt)
@@ -709,29 +711,35 @@ export const register: Register = on => {
       const W = Math.max(220, Math.min(1400, (e.props.bodyColumns || 100) * 8 - 72))
       const row = bandRow(W, p, t, elapsedMs, cost)
       return (
-        <Box flexDirection="row" alignItems="center" gap={1}>
-          <Svg key="usage-band" source={row.source} alt={alt} width={W} height={row.height} />
-          {open}
+        <Box flexDirection="column">
+          <Box flexDirection="row" alignItems="center" gap={1}>
+            <Svg key="usage-band" source={row.source} alt={alt} width={W} height={row.height} />
+            {open}
+          </Box>
+          {below}
         </Box>
       )
     }
 
     return (
-      <Box flexDirection="row" gap={1}>
-        <Text color={COLOR[p.status]}>{GLYPH[p.status]}</Text>
-        <Text bold>{mainModel ? modelName(mainModel) : '—'}</Text>
-        <Text dimColor wrap="truncate-end">
-          {mainModel}
-          {others.length ? ` +${others.join(', +')}` : ''}
-        </Text>
-        <Text>│</Text>
-        <Text bold>{fmtTokens(total(t))} tokens</Text>
-        <Text dimColor>({fmtTokens(t.output)} out)</Text>
-        <Text>│</Text>
-        <Text dimColor>
-          {fmtTime(elapsedMs)} · ≈{fmtUsd(cost)}
-        </Text>
-        {open}
+      <Box flexDirection="column">
+        <Box flexDirection="row" gap={1}>
+          <Text color={COLOR[p.status]}>{GLYPH[p.status]}</Text>
+          <Text bold>{mainModel ? modelName(mainModel) : '—'}</Text>
+          <Text dimColor wrap="truncate-end">
+            {mainModel}
+            {others.length ? ` +${others.join(', +')}` : ''}
+          </Text>
+          <Text>│</Text>
+          <Text bold>{fmtTokens(total(t))} tokens</Text>
+          <Text dimColor>({fmtTokens(t.output)} out)</Text>
+          <Text>│</Text>
+          <Text dimColor>
+            {fmtTime(elapsedMs)} · ≈{fmtUsd(cost)}
+          </Text>
+          {open}
+        </Box>
+        {below}
       </Box>
     )
   })
