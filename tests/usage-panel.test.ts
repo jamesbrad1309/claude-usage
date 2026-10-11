@@ -163,13 +163,14 @@ test('every prompt of the session is listed once, newest first, with when it was
   expect(records[0]?.text).toMatch(/^#3  ·  Sent \d\d:\d\d:\d\d\nSecond prompt\nRunning 0s  ·  no tokens yet$/)
   expect(records[1]?.text).toMatch(/^#2  ·  Sent \d\d:\d\d:\d\d\nFirst prompt\nDone \d\d:\d\d:\d\d \(1m 05s\)  ·  no tokens yet$/)
   expect(records[2]?.text).toBe('#1  ·  Sent before the panel was watching\nPrompt from before\nNo figures: sent before the panel was watching')
-  // Each record sits in a card that lights on hover; the newest outlined in the accent.
-  const cards = (await ui.findAll({ type: 'Box' })).filter(b => b.props.borderStyle === 'round')
-  expect(cards.map(c => c.props.borderColor)).toEqual(['claude', 'subtle', 'subtle'])
-  // (a hover is kept beside the props, on the drawn element)
-  const tree = JSON.stringify(await ui.drawn())
-  for (const id of ['u2', 'u1', 'm0']) expect(tree).toMatch(new RegExp(`"key":"card:${id}"[^}]*\\},"hover":\\{"borderColor":"claude"\\}`))
-
+  // A timeline: each record beside a rail, a status-coloured dot on its first line and a line
+  // down to the next record; the oldest is its dot alone.
+  const rails = (await ui.findAll({ type: 'Box' })).filter(b => b.key?.startsWith('rail:'))
+  expect(rails.map(r => r.key)).toEqual(['rail:u2', 'rail:u1', 'rail:m0'])
+  expect(rails.map(r => r.text)).toEqual(['◉│││', '●│││', '●'])
+  // Dots by status: running, done, and no figures.
+  const dots = (await ui.findAll({ type: 'Text' })).filter(x => x.text === '◉' || x.text === '●')
+  expect(dots.map(d => d.props.color)).toEqual(['suggestion', 'success', 'inactive'])
   // The test kit has no conversation to scroll: the pane says so instead of doing nothing.
   await ui.press({ key: 'jump:u1' })
   expect(await ui.find({ type: 'Text', text: /^Couldn't scroll to that prompt: / })).toBeDefined()
