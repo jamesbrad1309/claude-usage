@@ -428,15 +428,15 @@ export const register: Register = on => {
               // the index and when it was sent; the prompt; when it finished, its models and tokens.
               const models = run?.models ?? []
               const parts = [
-                <Text key="index" color={isLatest ? 'claude' : 'subtle'} bold hover={{ scope: `tl:${row.id}`, color: 'claude' }}>
+                <Text key="index" color={isLatest ? 'claude' : 'subtle'} bold>
                   {`#${n}`}
                 </Text>,
                 <Text key="sent" dimColor>
                   {sent !== undefined ? `  ·  Sent ${fmtClock(sent, at)}` : '  ·  Sent before the panel was watching'}
                 </Text>,
                 '\n',
-                <Text key="text" bold hover={{ scope: `tl:${row.id}`, underline: true }}>
-                  {oneLine(row.text, cols - 3)}
+                <Text key="text" bold hover={{ underline: true }}>
+                  {oneLine(row.text, cols)}
                 </Text>,
                 '\n',
                 ...(run && status
@@ -462,23 +462,21 @@ export const register: Register = on => {
                     ]),
               ]
               const record = h(Button, { key: `jump:${row.id}`, plain: true, onPress: () => jumpTo($, row) }, ...parts)
-              // A timeline: a status dot beside the record's first line and a rail down the
-              // rest, joining the next (older) record; the oldest is its dot alone.
-              const isOldest = i === items.length - 1
-              const dot = status ? STATUS_TEXT[status] : 'inactive'
-              return (
-                <Box key={`item:${row.id}`} flexDirection="row">
-                  <Box key={`rail:${row.id}`} flexDirection="column" width={3} flexShrink={0}>
-                    <Text color={dot} hover={{ scope: `tl:${row.id}`, color: 'claude' }}>
-                      {status === 'running' ? '◉' : '●'}
-                    </Text>
-                    {!isOldest && <Text color="subtle">│</Text>}
-                    {!isOldest && <Text color="subtle">│</Text>}
-                    {!isOldest && <Text color="subtle">│</Text>}
-                  </Box>
-                  <Box key={`body:${row.id}`} flexDirection="column" flexGrow={1} paddingBottom={isOldest ? 0 : 1}>
-                    {record}
-                  </Box>
+              return isDesktop ? (
+                <Box
+                  key={`card:${row.id}`}
+                  flexDirection="column"
+                  borderStyle="round"
+                  borderColor={isLatest ? 'claude' : 'subtle'}
+                  hover={{ borderColor: 'claude' }}
+                  paddingX={1}
+                  marginTop={1}
+                >
+                  {record}
+                </Box>
+              ) : (
+                <Box key={`card:${row.id}`} flexDirection="column" marginTop={1}>
+                  {record}
                 </Box>
               )
             })}
