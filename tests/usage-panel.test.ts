@@ -64,6 +64,7 @@ test('the prompt totals tokens over the main loop and its subagents, by model', 
   const step = async (e: object) => {
     for await (const _ of $.turn.step({ messageCount: 1, ...e } as never)) void _
   }
+  await $.session.append({ uuid: 'u1', door: 'prompt', origin: COMPOSER, message: { type: 'user', role: 'user', content: [{ type: 'text', text: 'Count my tokens' }] } } as never)
   await $.turn.start({ text: 'Count my tokens', turnId: 't1' })
   await step({ turnId: 't1', index: 0, model: 'claude-opus-5-5' })
   await $.agent.spawn({ tool_use_id: 'u1', prompt: 'p', description: 'Find files', subagentType: 'Explore' } as never)
@@ -82,6 +83,9 @@ test('the prompt totals tokens over the main loop and its subagents, by model', 
   expect(card?.alt).toMatch(/22k tokens \(in 1k, out 600, cache read 20k, cache write 0\)/)
   expect(card?.alt).toMatch(/Opus 5\.5 \(claude-opus-5-5\) main 22k; Haiku 5\.5 \(claude-haiku-5-5\) 1 subagent 300/)
   expect(card?.source).toMatch(/^<svg /)
+  // Its record's last line: status, each model, the prompt's tokens.
+  const record = await desk.find({ type: 'Button', key: 'jump:u1' })
+  expect(record?.text).toMatch(/\nCount my tokens\nRunning 0s  ·  ● Opus 5\.5  ·  ● Haiku 5\.5  ·  22k tokens$/)
   await desk.unmount()
 })
 
@@ -151,11 +155,11 @@ test('every prompt of the session is listed once, newest first, with when it was
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: paneProps })
   expect(await ui.find({ type: 'Button', text: /Prompts in this session · 3/ })).toBeDefined()
   const records = (await ui.findAll({ type: 'Button' })).filter(b => b.key?.startsWith('jump:'))
-  // Newest first, no numbers; the prompt from before the mod loaded is the oldest.
+  // Newest first, three lines each: index and sent time; the prompt; done time, models, tokens.
   expect(records.map(b => b.key)).toEqual(['jump:u2', 'jump:u1', 'jump:m0'])
-  expect(records[0]?.text).toMatch(/^Second prompt\nSent \d\d:\d\d:\d\d  ·  running 0s$/)
-  expect(records[1]?.text).toMatch(/^First prompt\nSent (\d\d:\d\d:\d\d)  →  done \d\d:\d\d:\d\d \(1m 05s\)/)
-  expect(records[2]?.text).toBe('Prompt from before\nSent before the panel was watching')
+  expect(records[0]?.text).toMatch(/^#3  ·  Sent \d\d:\d\d:\d\d\nSecond prompt\nRunning 0s  ·  no tokens yet$/)
+  expect(records[1]?.text).toMatch(/^#2  ·  Sent \d\d:\d\d:\d\d\nFirst prompt\nDone \d\d:\d\d:\d\d \(1m 05s\)  ·  no tokens yet$/)
+  expect(records[2]?.text).toBe('#1  ·  Sent before the panel was watching\nPrompt from before\nNo figures: sent before the panel was watching')
   // Each record sits in a card that lights on hover; the newest outlined in the accent.
   const cards = (await ui.findAll({ type: 'Box' })).filter(b => b.props.borderStyle === 'round')
   expect(cards.map(c => c.props.borderColor)).toEqual(['claude', 'subtle', 'subtle'])

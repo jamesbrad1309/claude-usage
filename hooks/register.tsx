@@ -404,7 +404,7 @@ export const register: Register = on => {
     const lastJump = await read($, jump)
     const promptList = (isDesktop: boolean) => {
       const cols = Math.max(30, (e.props.bodyColumns || 60) - 6)
-      const items = promptRows.map(row => ({ row, run: runOf(list, row) })).reverse()
+      const items = promptRows.map((row, i) => ({ row, run: runOf(list, row), n: i + 1 })).reverse()
       const failed = lastJump && !lastJump.isDone ? lastJump : null
       return (
         <Box flexDirection="column" marginTop={1}>
@@ -419,48 +419,47 @@ export const register: Register = on => {
           )}
           {isOpen && promptRows.length === 0 && <Text dimColor>Your prompts appear here; click one to scroll up to it.</Text>}
           {isOpen &&
-            items.map(({ row, run }, i) => {
+            items.map(({ row, run, n }, i) => {
               const isLatest = i === 0
               const t = run ? promptTokens(run) : undefined
               const sent = run?.startedAt ?? row.sentAt
               const status = run?.status
-              // One button, children flat (strings and Text only): a press anywhere on it jumps.
+              // Three lines, one button (children flat: strings and Text only; a press anywhere jumps):
+              // the index and when it was sent; the prompt; when it finished, its models and tokens.
+              const models = run?.models ?? []
               const parts = [
-                <Text key="text" bold={isLatest} hover={{ underline: true }}>
+                <Text key="index" color={isLatest ? 'claude' : 'subtle'} bold>
+                  {`#${n}`}
+                </Text>,
+                <Text key="sent" dimColor>
+                  {sent !== undefined ? `  ·  Sent ${fmtClock(sent, at)}` : '  ·  Sent before the panel was watching'}
+                </Text>,
+                '\n',
+                <Text key="text" bold hover={{ underline: true }}>
                   {oneLine(row.text, cols)}
                 </Text>,
                 '\n',
-                <Text key="sent" dimColor>
-                  {sent !== undefined ? `Sent ${fmtClock(sent, at)}` : 'Sent before the panel was watching'}
-                </Text>,
                 ...(run && status
                   ? [
                       <Text key="done" color={STATUS_TEXT[status]}>
                         {status === 'running'
-                          ? `  ·  running ${fmtTime(at - run.startedAt)}`
-                          : `  →  ${status === 'done' ? 'done' : status} ${fmtClock(run.endedAt ?? at, at)} (${fmtTime((run.endedAt ?? at) - run.startedAt)})`}
+                          ? `Running ${fmtTime(at - run.startedAt)}`
+                          : `${status === 'done' ? 'Done' : status === 'aborted' ? 'Stopped' : 'Failed'} ${fmtClock(run.endedAt ?? at, at)} (${fmtTime((run.endedAt ?? at) - run.startedAt)})`}
                       </Text>,
-                    ]
-                  : []),
-                ...(run && t && total(t) > 0
-                  ? [
-                      '\n',
-                      <Text key="tokens" bold>
-                        {fmtTokens(total(t))} tokens
-                      </Text>,
-                      <Text key="out" dimColor>
-                        {` (${fmtTokens(t.output)} out)`}
-                      </Text>,
-                      ...run.models.map(m => (
+                      ...models.map(m => (
                         <Text key={`model:${m.model}`} color={isDesktop ? modelColor(m.model) : undefined}>
-                          {`  ● ${modelName(m.model)}`}
+                          {`  ·  ● ${modelName(m.model)}`}
                         </Text>
                       )),
-                      <Text key="cost" dimColor>
-                        {`  ≈${fmtUsd(costOf(run))}`}
+                      <Text key="tokens" bold>
+                        {`  ·  ${t && total(t) > 0 ? `${fmtTokens(total(t))} tokens` : 'no tokens yet'}`}
                       </Text>,
                     ]
-                  : []),
+                  : [
+                      <Text key="none" dimColor>
+                        No figures: sent before the panel was watching
+                      </Text>,
+                    ]),
               ]
               const record = h(Button, { key: `jump:${row.id}`, plain: true, onPress: () => jumpTo($, row) }, ...parts)
               return isDesktop ? (
