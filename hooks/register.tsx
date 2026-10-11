@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { ElementConstructor, EngineInterface, Register, SessionUsage, SvgProps, TurnUsage } from 'claude-code'
+import type { EngineInterface, Register, SessionUsage, TurnUsage } from 'claude-code'
 
-import type { AgentRun, ModelUse, PromptRow, PromptRun, RunStatus, SessionFigures, Tokens } from '../types'
+import type { AgentRun, JumpResult, ModelUse, PromptRow, PromptRun, RunStatus, SessionFigures, Tokens } from '../types'
 import {
   agentRow,
   bandRow,
@@ -10,8 +10,8 @@ import {
   fmtUsd,
   modelName,
   PARTS,
+  modelColor,
   promptCard,
-  promptMeta,
   sessionTiles,
   total,
   whereOf,
@@ -28,6 +28,7 @@ const session = atom({ plugin: 'usage-panel', key: 'session' } as const, {
   rateLimits: [],
 })
 const rows = atom({ plugin: 'usage-panel', key: 'rows' } as const, [])
+const jump = atom({ plugin: 'usage-panel', key: 'jump' } as const, null as JumpResult | null)
 const isListOpen = atom({ plugin: 'usage-panel', key: 'isListOpen' } as const, true)
 const now = atom({ plugin: 'usage-panel', key: 'now' } as const, 0)
 
@@ -94,7 +95,7 @@ const norm = (s: string): string => s.replace(/\s+/g, ' ').trim()
 const isPersons = (origin: { kind: string } | undefined): boolean => origin?.kind === 'composer' || origin?.kind === 'bridge'
 
 // Records a prompt row once, by its id or, for a row first seen drawn, by its text.
-const addRow = (list: PromptRow[], row: { id: string; text: string; isDrawn: boolean }): PromptRow[] => {
+const addRow = (list: PromptRow[], row: { id: string; text: string; isDrawn: boolean; sentAt?: number }): PromptRow[] => {
   const text = norm(row.text)
   if (!text || list.some(r => r.id === row.id || r.renderId === row.id)) return list
   if (row.isDrawn) {
@@ -102,7 +103,7 @@ const addRow = (list: PromptRow[], row: { id: string; text: string; isDrawn: boo
     const i = list.findIndex(r => !r.renderId && r.text === text)
     if (i >= 0) return list.map((r, j) => (j === i ? { ...r, renderId: row.id } : r))
   }
-  if (!row.isDrawn) return [...list, { id: row.id, text }]
+  if (!row.isDrawn) return [...list, { id: row.id, text, sentAt: row.sentAt }]
   // Known only from its drawn row: sent before this mod was watching, so older than every
   // appended row; it goes after the other rows like it, in the order they are drawn.
   const at = list.findIndex(r => r.renderId !== r.id)
@@ -117,6 +118,17 @@ const oneLine = (s: string, max: number): string => {
   const flat = norm(s)
   return flat.length > max ? flat.slice(0, Math.max(1, max - 1)) + '…' : flat
 }
+
+// 14:32:05 today; Oct 10, 14:32 on another day.
+const fmtClock = (ms: number, today: number): string => {
+  const d = new Date(ms)
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  return d.toDateString() === new Date(today || ms).toDateString()
+    ? time
+    : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time.slice(0, 5)}`
+}
+
+const STATUS_TEXT: Record<RunStatus, string> = { running: 'suggestion', done: 'success', aborted: 'warning', failed: 'error' }
 
 const GLYPH: Record<RunStatus, string> = { running: '●', done: '✓', aborted: '◼', failed: '✗' }
 const COLOR: Record<RunStatus, string> = { running: 'cyan', done: 'green', aborted: 'yellow', failed: 'red' }
@@ -139,14 +151,28 @@ async function togglePane($: EngineInterface): Promise<boolean> {
   return true
 }
 
-// Scrolls the conversation to one of your prompts (allowed: it answers your click).
+// The key of the Box this mod draws each of your prompts' conversation rows in.
+const rowKey = (id: string): string => `usage-panel:prompt:${id}`
+
+// Scrolls the conversation up to one of your prompts (allowed: it answers your click):
+// the row by the id it is drawn under, else the Box this mod draws it in. The outcome is
+// kept, so the pane can say why when nothing moved.
 async function jumpTo($: EngineInterface, row: PromptRow): Promise<void> {
-  try {
-    const result = await $.ui.scroll({ to: { requestId: row.renderId ?? row.id }, block: 'start' })
-    if ('deny' in result && result.deny) $.ui.toast(`Couldn't scroll to that prompt: ${result.deny}`)
-  } catch (err) {
-    $.ui.toast(`Couldn't scroll to that prompt: ${(err as Error).message}`)
+  const id = row.renderId ?? row.id
+  let reason = ''
+  for (const to of [{ requestId: id }, { key: rowKey(id) }]) {
+    try {
+      const result = await $.ui.scroll({ to, block: 'start' })
+      if (!result.deny) {
+        await update($, jump, () => ({ rowId: row.id, isDone: true }))
+        return
+      }
+      reason = result.deny
+    } catch (err) {
+      reason = (err as Error).message
+    }
   }
+  await update($, jump, () => ({ rowId: row.id, isDone: false, reason }))
 }
 
 // Prompt rows seen drawn, waiting to be saved: a render hook may not write state, so the
@@ -213,21 +239,25 @@ export const register: Register = on => {
     await saveDrawn($)
     if (!e.agentId && isPersons(e.origin)) {
       const text = e.message.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
-      await update($, rows, list => addRow(list, { id: e.uuid, text, isDrawn: false }))
+      const sentAt = await $.clock.now()
+      await update($, rows, list => addRow(list, { id: e.uuid, text, isDrawn: false, sentAt }))
     }
     return result
   })
 
-  // Rows drawn in the conversation: prompts sent before this mod loaded, and the id each is drawn under.
+  // Your prompts' rows in the conversation: noted (prompts sent before this mod loaded, and
+  // the id each is drawn under), and drawn inside a Box of this mod's, unchanged, so a click
+  // in the list may scroll to it: the engine scrolls to rows a plugin draws.
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
-    if (isPersons(e.props.origin)) {
-      const id = e.requestId
-      const known = await read($, rows)
-      if (!known.some(r => r.id === id || r.renderId === id) && !drawn.some(r => r.id === id)) {
-        drawn.push({ id, text: e.props.text })
-      }
+    if (!isPersons(e.props.origin)) return next(e)
+    const id = e.requestId
+    const known = await read($, rows)
+    if (!known.some(r => r.id === id || r.renderId === id) && !drawn.some(r => r.id === id)) {
+      drawn.push({ id, text: e.props.text })
     }
-    return next(e)
+    const { Box } = $.ui.resolve(e)
+    const row = await next(e)
+    return <Box key={rowKey(id)}>{row}</Box>
   })
 
   // A main-loop turn: one per prompt (a subagent's run raises none).
@@ -369,65 +399,85 @@ export const register: Register = on => {
     const latest = list.at(-1)
     const agents = latest ? ordered(latest.agents) : []
 
-    // Every prompt of the session, newest first, as cards; a press on one scrolls the
-    // conversation to it. Its bar is sized against the session's largest prompt.
-    const runs = promptRows.map(row => runOf(list, row))
-    const maxTokens = Math.max(0, ...runs.map(r => (r ? total(promptTokens(r)) : 0)))
-    const promptList = (desk?: { W: number; Svg: ElementConstructor<SvgProps> }) => {
-      const W = desk?.W
-      const Svg = desk?.Svg
-      const cols = W ? Math.floor(W / 7.5) : Math.max(30, e.props.bodyColumns || 60)
-      const items = promptRows.map((row, i) => ({ row, run: runs[i], n: i + 1 })).reverse()
+    // Every prompt of the session, newest first. Each record is one button (a press anywhere
+    // on it scrolls the conversation up to the prompt) inside a card that lights on hover.
+    const lastJump = await read($, jump)
+    const promptList = (isDesktop: boolean) => {
+      const cols = Math.max(30, (e.props.bodyColumns || 60) - 6)
+      const items = promptRows.map(row => ({ row, run: runOf(list, row) })).reverse()
+      const failed = lastJump && !lastJump.isDone ? lastJump : null
       return (
         <Box flexDirection="column" marginTop={1}>
           <Button key="list-toggle" plain onPress={() => update($, isListOpen, v => !v)}>
             <Text bold>{isOpen ? '▾' : '▸'} Prompts in this session</Text>
             <Text dimColor> · {promptRows.length}</Text>
           </Button>
-          {isOpen && promptRows.length === 0 && <Text dimColor>Your prompts appear here; click one to scroll to it.</Text>}
+          {failed && (
+            <Text color="warning" wrap="truncate-end">
+              Couldn't scroll to that prompt: {failed.reason || 'the conversation did not move'}
+            </Text>
+          )}
+          {isOpen && promptRows.length === 0 && <Text dimColor>Your prompts appear here; click one to scroll up to it.</Text>}
           {isOpen &&
-            items.map(({ row, run, n }, i) => {
+            items.map(({ row, run }, i) => {
               const isLatest = i === 0
               const t = run ? promptTokens(run) : undefined
-              const head = (
-                <Button key={`jump:${row.id}`} plain onPress={() => jumpTo($, row)}>
-                  <Text color={isLatest ? 'claude' : 'subtle'} bold>
-                    {String(n).padStart(2)}
-                  </Text>
-                  <Text> </Text>
-                  <Text bold={isLatest}>{oneLine(row.text, cols - 8)}</Text>
-                </Button>
-              )
-              if (W && Svg) {
-                const meta = promptMeta(W - 24, run, t, maxTokens)
-                return (
-                  <Box
-                    key={`card:${row.id}`}
-                    flexDirection="column"
-                    borderStyle="round"
-                    borderColor={isLatest ? 'claude' : 'subtle'}
-                    paddingX={1}
-                    marginTop={1}
-                  >
-                    {head}
-                    <Svg
-                      source={meta.source}
-                      alt={run ? `${fmtTokens(total(t!))} tokens · ${run.models.map(m => modelName(m.model)).join(', ') || 'no model yet'} · ${run.status}` : 'no figures'}
-                      width={W - 24}
-                      height={meta.height}
-                    />
-                  </Box>
-                )
-              }
-              return (
-                <Box key={`card:${row.id}`} flexDirection="column">
-                  {head}
-                  <Text dimColor wrap="truncate-end">
-                    {'     '}
-                    {run
-                      ? `${GLYPH[run.status]} ${fmtTokens(total(t!))} tok · ${run.models.map(m => modelName(m.model)).join(', ') || '—'} · ${PARTS.map(p => `${p.label} ${fmtTokens(t![p.key])}`).join(' · ')}`
-                      : 'sent before the panel was watching'}
-                  </Text>
+              const sent = run?.startedAt ?? row.sentAt
+              const status = run?.status
+              // One button, children flat (strings and Text only): a press anywhere on it jumps.
+              const parts = [
+                <Text key="text" bold={isLatest} hover={{ underline: true }}>
+                  {oneLine(row.text, cols)}
+                </Text>,
+                '\n',
+                <Text key="sent" dimColor>
+                  {sent !== undefined ? `Sent ${fmtClock(sent, at)}` : 'Sent before the panel was watching'}
+                </Text>,
+                ...(run && status
+                  ? [
+                      <Text key="done" color={STATUS_TEXT[status]}>
+                        {status === 'running'
+                          ? `  ·  running ${fmtTime(at - run.startedAt)}`
+                          : `  →  ${status === 'done' ? 'done' : status} ${fmtClock(run.endedAt ?? at, at)} (${fmtTime((run.endedAt ?? at) - run.startedAt)})`}
+                      </Text>,
+                    ]
+                  : []),
+                ...(run && t && total(t) > 0
+                  ? [
+                      '\n',
+                      <Text key="tokens" bold>
+                        {fmtTokens(total(t))} tokens
+                      </Text>,
+                      <Text key="out" dimColor>
+                        {` (${fmtTokens(t.output)} out)`}
+                      </Text>,
+                      ...run.models.map(m => (
+                        <Text key={`model:${m.model}`} color={isDesktop ? modelColor(m.model) : undefined}>
+                          {`  ● ${modelName(m.model)}`}
+                        </Text>
+                      )),
+                      <Text key="cost" dimColor>
+                        {`  ≈${fmtUsd(costOf(run))}`}
+                      </Text>,
+                    ]
+                  : []),
+              ]
+              const record = h(Button, { key: `jump:${row.id}`, plain: true, onPress: () => jumpTo($, row) }, ...parts)
+              return isDesktop ? (
+                <Box
+                  key={`card:${row.id}`}
+                  flexDirection="column"
+                  borderStyle="round"
+                  borderColor={isLatest ? 'claude' : 'subtle'}
+                  hover={{ borderColor: 'claude' }}
+                  paddingX={1}
+                  marginTop={1}
+                >
+                  {record}
+                </Box>
+              ) : (
+                <Box key={`card:${row.id}`} flexDirection="column" marginTop={1}>
+                  {record}
                 </Box>
               )
             })}
@@ -470,7 +520,7 @@ export const register: Register = on => {
               })}
             </Box>
           )}
-          {promptList({ W, Svg })}
+          {promptList(true)}
         </Box>
       )
     }
@@ -550,7 +600,7 @@ export const register: Register = on => {
             <Text dimColor>{'  '}Send a prompt to see its tokens, models and subagents.</Text>
           )}
         </Box>
-        {promptList()}
+        {promptList(false)}
       </Box>
     )
   })

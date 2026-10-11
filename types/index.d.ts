@@ -59,7 +59,12 @@ export type PromptRow = {
   /** The id the transcript draws the row under, once seen drawn. */
   renderId?: string
   text: string
+  /** When you sent it ($.clock.now() ms); absent for a prompt sent before the mod loaded. */
+  sentAt?: number
 }
+
+/** The last click on a prompt record: whether the conversation scrolled to it. */
+export type JumpResult = { rowId: string; isDone: boolean; reason?: string }
 
 export type RateLimit = { kind: string; percentUsed: number; resetsAt?: string }
 
@@ -77,6 +82,7 @@ declare module 'claude-code' {
       prompts: PromptRun[]
       session: SessionFigures
       rows: PromptRow[]
+      jump: JumpResult | null
       isListOpen: boolean
       now: number
     }

@@ -103,9 +103,10 @@ test('the band above the prompt shows the prompt’s tokens and model id', async
   await desk.unmount()
 })
 
-test('every prompt of the session is listed once, newest first, and a click asks to scroll to it', async ($, on) => {
-  mock.clock(on)
+test('every prompt of the session is listed once, newest first, with when it was sent and done', async ($, on) => {
+  const clock = mock.clock(on)
   on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', async () => ({ text: '' }))
   // The engine's own drawing of a conversation row.
   on('ui.render', { component: 'UserMessage' }, async ($, e) => {
     const { Text } = $.ui.resolve(e)
@@ -115,17 +116,25 @@ test('every prompt of the session is listed once, newest first, and a click asks
     $.session.append({ uuid, door: 'prompt', origin, message: { type: 'user', role: 'user', content: [{ type: 'text', text }] } } as never)
 
   await append('u1', 'First prompt')
+  await $.turn.start({ text: 'First prompt', turnId: 't1' })
+  await clock.advance(65_000)
+  await $.turn.complete({ turnId: 't1', reason: 'answer', isAborted: false, answer: '' } as never)
   await append('u2', 'Second prompt')
   // A notification is not one of your prompts.
   await append('n1', 'agent done', { kind: 'task-notification' })
-  // The first prompt's row, drawn: the same prompt, now also known by the id it is drawn under.
+
+  // Your prompt's row is drawn inside a Box of the mod's, unchanged, so the list can scroll to it.
   const row = await $.ui.mount({
     plugin: 'usage-panel',
-    surface: 'terminal',
+    surface: 'desktop',
     component: 'UserMessage',
-    requestId: 'm1',
+    requestId: 'u1',
     props: { text: 'First prompt', origin: COMPOSER, isExpanded: false } as never,
   })
+  const drawnRow = (await row.drawn()) as { type: string; props: { key?: string }; children: { type: string }[] }
+  expect(drawnRow.type).toBe('Box')
+  expect(drawnRow.props.key).toBe('usage-panel:prompt:u1')
+  expect(drawnRow.children[0]?.type).toBe('Text')
   await row.unmount()
   // A prompt from before the mod loaded: known only from its drawn row.
   const old = await $.ui.mount({
@@ -139,20 +148,23 @@ test('every prompt of the session is listed once, newest first, and a click asks
   // Drawn rows are saved on the next event (or the ticker): here, the next prompt's turn.
   await $.turn.start({ text: 'Second prompt', turnId: 't2' })
 
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: paneProps })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: paneProps })
   expect(await ui.find({ type: 'Button', text: /Prompts in this session · 3/ })).toBeDefined()
-  const buttons = (await ui.findAll({ type: 'Button' })).filter(b => b.key?.startsWith('jump:'))
-  // Newest first; the prompt from before the mod loaded is the oldest.
-  expect(buttons.map(b => b.key)).toEqual(['jump:u2', 'jump:u1', 'jump:m0'])
-  expect(buttons[2]?.text).toMatch(/^\s*1 Prompt from before$/)
-  // The test kit has no conversation to scroll: the press must still settle (a toast says why).
-  await ui.press({ key: 'jump:u1' })
-  await ui.unmount()
-
-  // On the desktop each prompt is a card: the latest outlined in the accent, a bar row under it.
-  const desk = await $.ui.mount({ ...PANE, surface: 'desktop', props: paneProps })
-  const cards = (await desk.findAll({ type: 'Box' })).filter(b => b.props.borderStyle === 'round')
+  const records = (await ui.findAll({ type: 'Button' })).filter(b => b.key?.startsWith('jump:'))
+  // Newest first, no numbers; the prompt from before the mod loaded is the oldest.
+  expect(records.map(b => b.key)).toEqual(['jump:u2', 'jump:u1', 'jump:m0'])
+  expect(records[0]?.text).toMatch(/^Second prompt\nSent \d\d:\d\d:\d\d  ·  running 0s$/)
+  expect(records[1]?.text).toMatch(/^First prompt\nSent (\d\d:\d\d:\d\d)  →  done \d\d:\d\d:\d\d \(1m 05s\)/)
+  expect(records[2]?.text).toBe('Prompt from before\nSent before the panel was watching')
+  // Each record sits in a card that lights on hover; the newest outlined in the accent.
+  const cards = (await ui.findAll({ type: 'Box' })).filter(b => b.props.borderStyle === 'round')
   expect(cards.map(c => c.props.borderColor)).toEqual(['claude', 'subtle', 'subtle'])
-  expect(await svgProps(desk, /^no figures$/)).toBeDefined()
-  await desk.unmount()
+  // (a hover is kept beside the props, on the drawn element)
+  const tree = JSON.stringify(await ui.drawn())
+  for (const id of ['u2', 'u1', 'm0']) expect(tree).toMatch(new RegExp(`"key":"card:${id}"[^}]*\\},"hover":\\{"borderColor":"claude"\\}`))
+
+  // The test kit has no conversation to scroll: the pane says so instead of doing nothing.
+  await ui.press({ key: 'jump:u1' })
+  expect(await ui.find({ type: 'Text', text: /^Couldn't scroll to that prompt: / })).toBeDefined()
+  await ui.unmount()
 })
