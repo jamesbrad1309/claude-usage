@@ -427,22 +427,25 @@ export const register: Register = on => {
               const t = run ? promptTokens(run) : undefined
               const sent = run?.startedAt ?? row.sentAt
               const status = run?.status
-              // Three lines, one button (children flat: strings and Text only; a press anywhere jumps):
-              // the index and when it was sent; the prompt; when it finished, its models and tokens.
+              // Three lines, each its own button (a button draws its children on one line, and
+              // holds only strings and Text): the index and when it was sent; the prompt; when it
+              // finished, its models and tokens. All three jump, so a press anywhere on it does.
               const models = run?.models ?? []
-              const parts = [
-                <Text key="index" color={isLatest ? 'claude' : 'subtle'} bold>
-                  {`#${n}`}
-                </Text>,
-                <Text key="sent" dimColor>
-                  {sent !== undefined ? `  ·  Sent ${fmtClock(sent, at)}` : '  ·  Sent before the panel was watching'}
-                </Text>,
-                '\n',
-                <Text key="text" bold hover={{ underline: true }}>
-                  {oneLine(row.text, cols)}
-                </Text>,
-                '\n',
-                ...(run && status
+              const lines = [
+                [
+                  <Text key="index" color={isLatest ? 'claude' : 'subtle'} bold>
+                    {`#${n}`}
+                  </Text>,
+                  <Text key="sent" dimColor>
+                    {sent !== undefined ? `  ·  Sent ${fmtClock(sent, at)}` : '  ·  Sent before the panel was watching'}
+                  </Text>,
+                ],
+                [
+                  <Text key="text" bold hover={{ underline: true }}>
+                    {oneLine(row.text, cols)}
+                  </Text>,
+                ],
+                run && status
                   ? [
                       <Text key="done" color={STATUS_TEXT[status]}>
                         {status === 'running'
@@ -462,9 +465,16 @@ export const register: Register = on => {
                       <Text key="none" dimColor>
                         No figures: sent before the panel was watching
                       </Text>,
-                    ]),
+                    ],
               ]
-              const record = h(Button, { key: `jump:${row.id}`, plain: true, onPress: () => jumpTo($, row) }, ...parts)
+              const LINE_KEYS = ['', ':prompt', ':done']
+              const record = (
+                <Box key={`lines:${row.id}`} flexDirection="column">
+                  {lines.map((line, j) =>
+                    h(Button, { key: `jump:${row.id}${LINE_KEYS[j]}`, plain: true, onPress: () => jumpTo($, row) }, ...line),
+                  )}
+                </Box>
+              )
               // A status dot, then the record's three lines aligned beside it.
               const item = (
                 <Box key={`row:${row.id}`} flexDirection="row" gap={1}>

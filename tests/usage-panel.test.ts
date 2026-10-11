@@ -32,7 +32,14 @@ function engine(on: On) {
   })
 }
 
-type Found = { key?: string; props: Record<string, unknown> }
+type Found = { key?: string; text?: string; props: Record<string, unknown> }
+
+// A prompt record is three line buttons (jump:<id>, jump:<id>:prompt, jump:<id>:done): the
+// records in order, and one record's lines joined.
+const recordIds = async (ui: { findAll: (q: object) => Promise<Found[]> }) =>
+  (await ui.findAll({ type: 'Button' })).map(b => b.key ?? '').filter(k => /^jump:[^:]+$/.test(k))
+const recordText = async (ui: { find: (q: object) => Promise<Found | undefined> }, id: string) =>
+  (await Promise.all(['', ':prompt', ':done'].map(async s => (await ui.find({ type: 'Button', key: `jump:${id}${s}` }))?.text ?? '?'))).join('\n')
 // An Svg carries no key: it is found by what its alt text says.
 const svgProps = async (ui: { findAll: (q: object) => Promise<Found[]> }, alt: RegExp) =>
   (await ui.findAll({ type: 'Svg' })).map(x => x.props as { alt: string; source: string }).find(p => alt.test(p.alt))
@@ -86,8 +93,7 @@ test('the prompt totals tokens over the main loop and its subagents, by model', 
   // The count and its label share one <text>, so a wide number never runs into "tokens".
   expect(card?.source).toMatch(/<text [^>]*><tspan [^>]*>22k<\/tspan><tspan dx="7"[^>]*>tokens<\/tspan><\/text>/)
   // Its record's last line: status, each model, the prompt's tokens.
-  const record = await desk.find({ type: 'Button', key: 'jump:u1' })
-  expect(record?.text).toMatch(/\nCount my tokens\nRunning 0s  ·  ● Opus 5\.5  ·  ● Haiku 5\.5  ·  22k tokens$/)
+  expect(await recordText(desk, 'u1')).toMatch(/\nCount my tokens\nRunning 0s  ·  ● Opus 5\.5  ·  ● Haiku 5\.5  ·  22k tokens$/)
   await desk.unmount()
 })
 
@@ -157,12 +163,12 @@ test('every prompt of the session is listed once, newest first, with when it was
 
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: paneProps })
   expect(await ui.find({ type: 'Button', text: /Prompts in this session · 3/ })).toBeDefined()
-  const records = (await ui.findAll({ type: 'Button' })).filter(b => b.key?.startsWith('jump:'))
+  const records = await recordIds(ui)
   // Newest first, three lines each: index and sent time; the prompt; done time, models, tokens.
-  expect(records.map(b => b.key)).toEqual(['jump:u2', 'jump:u1', 'jump:m0'])
-  expect(records[0]?.text).toMatch(/^#3  ·  Sent \d\d:\d\d:\d\d\nSecond prompt\nRunning 0s  ·  no tokens yet$/)
-  expect(records[1]?.text).toMatch(/^#2  ·  Sent \d\d:\d\d:\d\d\nFirst prompt\nDone \d\d:\d\d:\d\d \(1m 05s\)  ·  no tokens yet$/)
-  expect(records[2]?.text).toBe('#1  ·  Sent before the panel was watching\nPrompt from before\nNo figures: sent before the panel was watching')
+  expect(records).toEqual(['jump:u2', 'jump:u1', 'jump:m0'])
+  expect(await recordText(ui, 'u2')).toMatch(/^#3  ·  Sent \d\d:\d\d:\d\d\nSecond prompt\nRunning 0s  ·  no tokens yet$/)
+  expect(await recordText(ui, 'u1')).toMatch(/^#2  ·  Sent \d\d:\d\d:\d\d\nFirst prompt\nDone \d\d:\d\d:\d\d \(1m 05s\)  ·  no tokens yet$/)
+  expect(await recordText(ui, 'm0')).toBe('#1  ·  Sent before the panel was watching\nPrompt from before\nNo figures: sent before the panel was watching')
   // Each record sits in a card that lights on hover; the newest outlined in the accent.
   const cards = (await ui.findAll({ type: 'Box' })).filter(b => b.props.borderStyle === 'round')
   expect(cards.map(c => c.props.borderColor)).toEqual(['claude', 'subtle', 'subtle'])
@@ -175,8 +181,11 @@ test('every prompt of the session is listed once, newest first, with when it was
   const dots = (await ui.findAll({ type: 'Text' })).filter(x => x.text === '●')
   expect(dots.map(d => d.props.color)).toEqual(['suggestion', 'success', 'inactive'])
 
+  // Every line of a record is its own button, laid out as a column of three lines.
+  const lines = JSON.stringify(await ui.drawn()).match(/"key":"lines:u1","flexDirection":"column"\},"children":\[(\{"type":"Button")/)
+  expect(lines?.[1]).toBe('{"type":"Button"')
   // The test kit has no conversation to scroll: the pane says so instead of doing nothing.
-  await ui.press({ key: 'jump:u1' })
+  await ui.press({ key: 'jump:u1:prompt' })
   expect(await ui.find({ type: 'Text', text: /^Couldn't scroll to that prompt: / })).toBeDefined()
   await ui.unmount()
 })
