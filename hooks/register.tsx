@@ -128,6 +128,9 @@ const fmtClock = (ms: number, today: number): string => {
     : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time.slice(0, 5)}`
 }
 
+// A translucent grey: a hover tint that reads on light and dark alike (no theme key is one).
+const HOVER_BG = '#8080802a'
+
 const STATUS_TEXT: Record<RunStatus, string> = { running: 'suggestion', done: 'success', aborted: 'warning', failed: 'error' }
 
 const GLYPH: Record<RunStatus, string> = { running: '●', done: '✓', aborted: '◼', failed: '✗' }
@@ -462,21 +465,32 @@ export const register: Register = on => {
                     ]),
               ]
               const record = h(Button, { key: `jump:${row.id}`, plain: true, onPress: () => jumpTo($, row) }, ...parts)
+              // A status dot, then the record's three lines aligned beside it.
+              const item = (
+                <Box key={`row:${row.id}`} flexDirection="row" gap={1}>
+                  <Text key={`dot:${row.id}`} color={status ? STATUS_TEXT[status] : 'inactive'}>
+                    ●
+                  </Text>
+                  <Box key={`body:${row.id}`} flexDirection="column" flexGrow={1}>
+                    {record}
+                  </Box>
+                </Box>
+              )
               return isDesktop ? (
                 <Box
                   key={`card:${row.id}`}
                   flexDirection="column"
                   borderStyle="round"
                   borderColor={isLatest ? 'claude' : 'subtle'}
-                  hover={{ borderColor: 'claude' }}
+                  hover={{ borderColor: 'claude', backgroundColor: HOVER_BG }}
                   paddingX={1}
                   marginTop={1}
                 >
-                  {record}
+                  {item}
                 </Box>
               ) : (
                 <Box key={`card:${row.id}`} flexDirection="column" marginTop={1}>
-                  {record}
+                  {item}
                 </Box>
               )
             })}

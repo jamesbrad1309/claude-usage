@@ -168,7 +168,12 @@ test('every prompt of the session is listed once, newest first, with when it was
   expect(cards.map(c => c.props.borderColor)).toEqual(['claude', 'subtle', 'subtle'])
   // (a hover is kept beside the props, on the drawn element)
   const tree = JSON.stringify(await ui.drawn())
-  for (const id of ['u2', 'u1', 'm0']) expect(tree).toMatch(new RegExp(`"key":"card:${id}"[^}]*\\},"hover":\\{"borderColor":"claude"\\}`))
+  for (const id of ['u2', 'u1', 'm0']) {
+    expect(tree).toMatch(new RegExp(`"key":"card:${id}"[^}]*\\},"hover":\\{"borderColor":"claude","backgroundColor":"#8080802a"\\}`))
+  }
+  // A dot starts each record, coloured by status: running, done, no figures.
+  const dots = (await ui.findAll({ type: 'Text' })).filter(x => x.text === '●')
+  expect(dots.map(d => d.props.color)).toEqual(['suggestion', 'success', 'inactive'])
 
   // The test kit has no conversation to scroll: the pane says so instead of doing nothing.
   await ui.press({ key: 'jump:u1' })
