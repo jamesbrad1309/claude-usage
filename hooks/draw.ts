@@ -412,8 +412,8 @@ export function bandRow(W: number, p: PromptRun, t: Tokens, elapsedMs: number, c
 
 /**
  * The third line of a prompt record, in the token counter's style: when it finished (or how
- * long it has run), a pill per model, and the count, bold, at the right. Without a run: a note
- * that it has no figures.
+ * long it has run) at the left; a pill per model, then the count, bold, at the right. Without a
+ * run: a note that it has no figures.
  */
 export function recordMeta(W: number, p: PromptRun | undefined, t: Tokens | undefined, done: string): { source: string; height: number; alt: string } {
   const H = 18
@@ -423,21 +423,39 @@ export function recordMeta(W: number, p: PromptRun | undefined, t: Tokens | unde
     return { source: svg(W, H, text(0, mid + 4, note, { size: 11, cls: 'su' })), height: H, alt: note }
   }
   const sum = total(t)
-  const parts: string[] = [text(0, mid + 4, done, { size: 11, fill: STATUS_COLOR[p.status], weight: 500 })]
-  let x = textWidth(done, 11, false, true) + 10
+  const parts: string[] = []
 
   // The count at the right edge, laid out with its label by the renderer.
   const count = sum > 0 ? fmtTokens(sum) : '0'
   const countW = textWidth(count, 12.5, false, true) + 5 + textWidth('tokens', 10.5)
   parts.push(spans(W, mid + 4.5, [{ s: count, size: 12.5, weight: 700 }, { s: 'tokens', size: 10.5, cls: 'mu', gap: 5 }], 'end'))
-  const right = W - countW - 10
+  const right = W - countW - 8
 
-  for (const m of p.models) {
-    const label = modelName(m.model)
-    const w = textWidth(label, 10, false, true) + 14
-    if (x + w > right) break
-    parts.push(pill(x, mid - 8, label, modelColor(m.model), 10).markup)
-    x += w + 4
+  // The model pills sit just left of the count: as many as fit after the finish time, first used
+  // first. Where not even the first fits, the finish time drops its duration to make room.
+  const fit = (start: number) => {
+    const out: { label: string; color: string; w: number }[] = []
+    let width = 0
+    for (const m of p.models) {
+      const label = modelName(m.model)
+      const w = Math.round(textWidth(label, 10, false, true) + 14)
+      if (start + width + w + (out.length ? 4 : 0) > right) break
+      width += w + (out.length ? 4 : 0)
+      out.push({ label, color: modelColor(m.model), w })
+    }
+    return { pills: out, width }
+  }
+  let label = done
+  let { pills, width: pillsW } = fit(textWidth(label, 11, false, true) + 10)
+  if (!pills.length && p.models.length && label.includes(' · ')) {
+    label = label.split(' · ')[0] ?? label
+    ;({ pills, width: pillsW } = fit(textWidth(label, 11, false, true) + 10))
+  }
+  parts.push(text(0, mid + 4, label, { size: 11, fill: STATUS_COLOR[p.status], weight: 500 }))
+  let px = right - pillsW
+  for (const one of pills) {
+    parts.push(pill(px, mid - 8, one.label, one.color, 10).markup)
+    px += one.w + 4
   }
 
   const alt = `${done} · ${p.models.map(m => modelName(m.model)).join(', ') || 'no model yet'} · ${count} tokens`
